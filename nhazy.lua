@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v49
--- ពេល steal egg បាន (egg ចូលដៃ) → teleport Home ភ្លាម
--- តាមដានចំនួន Tool ក្នុង Character (ដៃ)
+-- palofsc: NhazX Steal An Egg - v51 FINAL
+-- ពិនិត្យតែ NPC ដែលកំពុងដេញយើង (មិនស្កេនទាំងអស់)
+-- ល្បឿនលឿន + teleport ពេលដេញ
 
-print("[NhazX v49] Loading...")
+print("[NhazX v51] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -18,9 +18,12 @@ local on = false
 local godmode = true
 local home = H.CFrame
 local lastTp = 0
-local cooldown = 1.0
+local cooldown = 3.0
 local tpCount = 0
-local lastHandCount = 0
+local lastChaseTime = 0
+local lastScan = 0
+local scanDelay = 1.0
+local nearbyNPCs = {}
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -76,10 +79,9 @@ local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
 local gB = mkBtn("Godmode: ON", 46, Color3.fromRGB(0, 130, 0))
 local hB = mkBtn("Set Home (here)", 82, Color3.fromRGB(0, 100, 180))
-local stB = mkBtn("Status: OFF", 118, Color3.fromRGB(40, 40, 40))
+local rdB = mkBtn("Range: 100", 118, Color3.fromRGB(80, 40, 100))
+local stB = mkBtn("Status: OFF", 154, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
-local infoB = mkBtn("Hand: 0 | Backpack: 0", 154, Color3.fromRGB(30, 30, 30))
-infoB.TextSize = 10
 
 local credit = Instance.new("TextLabel")
 credit.Size = UDim2.new(1, 0, 0, 18)
@@ -141,28 +143,50 @@ local function applyGodmode()
 end
 
 -- ============================================================
--- រាប់ Tools ក្នុងដៃ + Backpack
+-- ស្កេន NPC ជិតៗ តែម្ដងម្កាល (មិនរាល់ frame)
 -- ============================================================
-local function countHand()
-    local n = 0
-    local c = LP.Character
-    if c then
-        for _, o in pairs(c:GetChildren()) do
-            if o:IsA("Tool") then n = n + 1 end
-        end
-    end
-    return n
-end
+local chaseRange = 100
 
-local function countBackpack()
-    local n = 0
-    local bp = LP:FindFirstChild("Backpack")
-    if bp then
-        for _, o in pairs(bp:GetChildren()) do
-            if o:IsA("Tool") then n = n + 1 end
+local function scanNearbyNPCs()
+    nearbyNPCs = {}
+    if not H or not H.Parent then return end
+    
+    -- ស្កេនតែ workspace ជាន់ទី 1 និង Models ធំៗ
+    pcall(function()
+        for _, container in pairs(workspace:GetChildren()) do
+            -- ពិនិត្យ Model ជាន់ទី 1
+            local function checkModel(o)
+                if o:IsA("Model") and o ~= Ch then
+                    local hum = o:FindFirstChildOfClass("Humanoid")
+                    local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
+                    
+                    if hum and root and hum.Health > 0 then
+                        -- មិនមែន player
+                        local isPl = false
+                        for _, pl in pairs(P:GetPlayers()) do
+                            if pl.Character == o then isPl = true break end
+                        end
+                        
+                        if not isPl then
+                            local dist = (root.Position - H.Position).Magnitude
+                            if dist < chaseRange then
+                                table.insert(nearbyNPCs, {model = o, dist = dist, hum = hum, root = root})
+                            end
+                        end
+                    end
+                end
+            end
+            
+            checkModel(container)
+            
+            -- ពិនិត្យ Folder ជាន់ទី 2 (តែ 1 ជាន់)
+            if container:IsA("Folder") or container:IsA("Model") then
+                for _, child in pairs(container:GetChildren()) do
+                    checkModel(child)
+                end
+            end
         end
-    end
-    return n
+    end)
 end
 
 -- ============================================================
@@ -181,9 +205,10 @@ end
 -- LOOP
 -- ============================================================
 spawn(function()
-    while task.wait(0.15) do
+    while task.wait(0.2) do
         if not Ch or not Ch.Parent then continue end
 
+        -- Godmode
         if godmode then
             pcall(function()
                 local hum = Ch:FindFirstChildOfClass("Humanoid")
@@ -196,32 +221,51 @@ spawn(function()
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        -- រាប់ Hand + Backpack
-        local handCnt = countHand()
-        local bpCnt = countBackpack()
-        infoB.Text = "Hand: " .. handCnt .. " | Bag: " .. bpCnt
+        -- ស្កេន NPC រាល់ 1 វិនាទី
+        local t = tick()
+        if t - lastScan > scanDelay then
+            lastScan = t
+            scanNearbyNPCs()
+        end
 
-        -- ពិនិត្យថាចំនួនដៃកើនឡើង
-        if handCnt > lastHandCount then
-            local t = tick()
-            if t - lastTp > cooldown then
-                lastTp = t
+        -- ពិនិត្យ NPC កំពុងដេញពី list ដែលបានស្កេន
+        local chaser = nil
+        local chaserDist = 0
+        local closestDist = math.huge
+
+        for _, npcData in pairs(nearbyNPCs) do
+            -- Update dist បើ NPC ផ្លាស់ទី
+            local currentDist = (npcData.root.Position - H.Position).Magnitude
+            npcData.dist = currentDist
+            
+            if currentDist < chaseRange then
+                -- ពិនិត្យថាដេញមករក
+                local vel = npcData.hum.MoveDirection
+                if vel.Magnitude > 0.05 then
+                    local toUs = (H.Position - npcData.root.Position).Unit
+                    local dot = vel.Unit:Dot(toUs)
+                    if dot > 0.3 and currentDist < closestDist then
+                        closestDist = currentDist
+                        chaser = npcData.model
+                        chaserDist = currentDist
+                    end
+                end
+            end
+        end
+
+        if chaser then
+            local t2 = tick()
+            if t2 - lastTp > cooldown then
+                lastTp = t2
+                lastChaseTime = t2
                 tpCount = tpCount + 1
-                stB.Text = "TP #" .. tpCount .. " (Hand: " .. handCnt .. ")"
-                
-                -- Teleport Home ភ្លាម
+                stB.Text = "TP #" .. tpCount .. ": " .. chaser.Name
                 tpHome()
-                
-                print("[NhazX] #" .. tpCount .. " Hand: " .. lastHandCount .. " -> " .. handCnt)
-                
-                -- Update baseline ក្រោយ 0.5s
-                task.wait(0.5)
-                lastHandCount = countHand()
+                print("[NhazX] #" .. tpCount .. " " .. chaser.Name .. " at " .. math.floor(chaserDist))
             end
         else
-            -- Update baseline បើដៃថយចុះ
-            if handCnt < lastHandCount then
-                lastHandCount = handCnt
+            if tick() - lastChaseTime > 2 then
+                stB.Text = "Watching... (" .. #nearbyNPCs .. ")"
             end
         end
     end
@@ -233,8 +277,7 @@ LP.CharacterAdded:Connect(function(c)
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
     applyGodmode()
-    task.wait(0.5)
-    lastHandCount = countHand()
+    nearbyNPCs = {}
 end)
 
 -- ============================================================
@@ -249,8 +292,9 @@ oB.MouseButton1Click:Connect(function()
         oB.BackgroundColor3 = Color3.fromRGB(0,180,0)
         bs.Color = Color3.fromRGB(0,255,0)
         stB.Text = "Watching..."
+        lastChaseTime = 0
+        lastScan = 0
         tpCount = 0
-        lastHandCount = countHand()
         applyGodmode()
     else
         oB.Text = "OFF"
@@ -280,6 +324,13 @@ hB.MouseButton1Click:Connect(function()
     print("[NhazX] Home: " .. tostring(home.Position))
 end)
 
+rdB.MouseButton1Click:Connect(function()
+    if chaseRange == 100 then chaseRange = 50
+    elseif chaseRange == 50 then chaseRange = 150
+    elseif chaseRange == 150 then chaseRange = 200
+    else chaseRange = 100 end
+    rdB.Text = "Range: " .. chaseRange
+end)
+
 applyGodmode()
-lastHandCount = countHand()
-print("[NhazX v49] Script By @nhaz_samurai")
+print("[NhazX v51] Script By @nhaz_samurai")
