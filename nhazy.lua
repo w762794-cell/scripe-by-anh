@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v32
--- ពេល steal egg (វាយបាន) → teleport មក Home ភ្លាម
--- រាប់ Tool + Model ក្នុង Character + Backpack
+-- palofsc: NhazX Steal An Egg - v35
+-- ពេលទៅ steal egg → មេវាដេញ → teleport មក Home ភ្លាម
+-- មិនមែនពេលកាន់ egg ទេ
 
-print("[NhazX v32] Loading...")
+print("[NhazX v35] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -17,7 +17,8 @@ local PG = LP:WaitForChild("PlayerGui")
 local on = false
 local home = H.CFrame
 local lastTp = 0
-local baseline = 0
+local chaseDistance = 30     -- ចម្ងាយដែលចាត់ទុកថាដេញ
+local cooldown = 1.5          -- ចន្លោះពេលរវាង teleport
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -45,7 +46,7 @@ local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = 
 local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = b
 
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 175, 0, 150)
+f.Size = UDim2.new(0, 180, 0, 180)
 f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
@@ -56,7 +57,7 @@ local fs = Instance.new("UIStroke") fs.Color = Color3.fromRGB(0,255,200) fs.Thic
 
 local function mkBtn(txt, y, col)
     local x = Instance.new("TextButton")
-    x.Size = UDim2.new(0, 145, 0, 30)
+    x.Size = UDim2.new(0, 150, 0, 30)
     x.Position = UDim2.new(0, 15, 0, y)
     x.BackgroundColor3 = col or Color3.fromRGB(55,55,55)
     x.Text = txt
@@ -71,8 +72,9 @@ end
 
 local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
-local hB = mkBtn("Set Home (here)", 46, Color3.fromRGB(0, 130, 0))
-local stB = mkBtn("Baseline: 0", 82, Color3.fromRGB(40, 40, 40))
+local ddB = mkBtn("Chase Range: 30", 46)
+local hB = mkBtn("Set Home (here)", 82, Color3.fromRGB(0, 130, 0))
+local stB = mkBtn("Status: OFF", 118, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
 
 -- អូស GUI
@@ -104,58 +106,68 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- រាប់ចំនួនវត្ថុក្នុង Character + Backpack
+-- ពិនិត្យថាមានសត្វដេញឬអត់
 -- ============================================================
-local function countItems()
-    local n = 0
-    local c = LP.Character
-    if c then
-        for _, o in pairs(c:GetChildren()) do
-            if o:IsA("Tool") or o:IsA("Model") then
-                n = n + 1
+local function checkChase()
+    if not H or not H.Parent then return false, nil end
+    
+    local closest = nil
+    local closestDist = chaseDistance
+    
+    for _, o in pairs(workspace:GetDescendants()) do
+        -- ពិនិត្យ Model ដែលមាន Humanoid (សត្វ/NPC)
+        if o:IsA("Model") and o ~= LP.Character then
+            local hum = o:FindFirstChildOfClass("Humanoid")
+            local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
+            
+            if hum and root then
+                local dist = (root.Position - H.Position).Magnitude
+                
+                if dist < closestDist then
+                    -- ពិនិត្យថាកំពុងដេញ (កំពុងផ្លាស់ទី)
+                    local speed = hum.WalkSpeed
+                    if speed > 0 then
+                        closestDist = dist
+                        closest = o
+                    end
+                end
             end
         end
     end
-    local bp = LP:FindFirstChild("Backpack")
-    if bp then
-        for _, o in pairs(bp:GetChildren()) do
-            if o:IsA("Tool") or o:IsA("Model") then
-                n = n + 1
-            end
-        end
-    end
-    return n
+    
+    return closest ~= nil, closest
 end
 
 -- ============================================================
--- ពិនិត្យរាល់ 0.2 វិនាទី (មិនរាល់ frame កាត់បន្ថយ lag)
+-- MAIN LOOP
 -- ============================================================
 spawn(function()
     while task.wait(0.2) do
         if not on then continue end
         if not H or not H.Parent then continue end
-        
-        local cnt = countItems()
-        
-        -- បើចំនួនកើន → steal egg បាន → teleport home
-        if cnt > baseline then
+
+        -- ពិនិត្យថាមានសត្វដេញ
+        local isChased, animal = checkChase()
+
+        if isChased then
             local t = tick()
-            if t - lastTp > 1 then
+            if t - lastTp > cooldown then
                 lastTp = t
+                
+                local name = animal and animal.Name or "?"
+                stB.Text = "Chased by: " .. name
+                
+                -- Teleport home ភ្លាម
                 pcall(function()
                     H.Velocity = Vector3.zero
                     H.AssemblyLinearVelocity = Vector3.zero
                     H.CFrame = home
                 end)
-                stB.Text = "Teleported! (" .. cnt .. ")"
-                print("[NhazX] Steal បាន → Teleport Home | Items: " .. cnt)
+                
+                print("[NhazX] ត្រូវដេញដោយ: " .. name .. " → Teleport Home")
             end
-        end
-        
-        -- Update baseline ក្រោយ teleport
-        if tick() - lastTp > 1.5 then
-            baseline = cnt
-            stB.Text = "Baseline: " .. baseline
+        else
+            stB.Text = "Status: Safe"
         end
     end
 end)
@@ -165,7 +177,6 @@ LP.CharacterAdded:Connect(function(c)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
-    baseline = countItems()
 end)
 
 -- ============================================================
@@ -179,15 +190,22 @@ oB.MouseButton1Click:Connect(function()
         oB.Text = "ON"
         oB.BackgroundColor3 = Color3.fromRGB(0,180,0)
         bs.Color = Color3.fromRGB(0,255,0)
-        baseline = countItems()
-        stB.Text = "Baseline: " .. baseline
-        print("[NhazX] ON | Baseline: " .. baseline)
+        stB.Text = "Watching..."
     else
         oB.Text = "OFF"
         oB.BackgroundColor3 = Color3.fromRGB(55,55,55)
         bs.Color = Color3.fromRGB(0,255,200)
-        stB.Text = "Baseline: " .. baseline
+        stB.Text = "Status: OFF"
     end
+end)
+
+ddB.MouseButton1Click:Connect(function()
+    -- ប្តូរចម្ងាយ
+    if chaseDistance == 30 then chaseDistance = 15
+    elseif chaseDistance == 15 then chaseDistance = 50
+    elseif chaseDistance == 50 then chaseDistance = 100
+    else chaseDistance = 30 end
+    ddB.Text = "Chase Range: " .. chaseDistance
 end)
 
 hB.MouseButton1Click:Connect(function()
@@ -198,6 +216,4 @@ hB.MouseButton1Click:Connect(function()
     print("[NhazX] New home: " .. tostring(home.Position))
 end)
 
-baseline = countItems()
-stB.Text = "Baseline: " .. baseline
-print("[NhazX v32] Ready | Items: " .. baseline)
+print("[NhazX v35] Ready | Chase Range: " .. chaseDistance)
