@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v46 FINAL FIX
--- Freeze NPC ឱ្យ work (រួមទាំង server-side)
--- Teleport ពេលមេដេញ (កែឱ្យ work ជាមួយ NPC)
+-- palofsc: NhazX Steal An Egg - v47 FINAL
+-- Teleport ពេលកាន់ egg ប៉ុណ្ណោះ
+-- ដោះស្រាយបញ្ហាស្លាប់ពេល teleport
 
-print("[NhazX v46] Loading...")
+print("[NhazX v47] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -16,12 +16,13 @@ local PG = LP:WaitForChild("PlayerGui")
 
 local on = false
 local godmode = true
-local freezeNPC = false
 local home = H.CFrame
+local homeY = home.Position.Y
 local lastTp = 0
-local cooldown = 3.0
-local lastChaseTime = 0
+local cooldown = 2.5
+local lastCount = 0
 local tpCount = 0
+local baselineTools = {}
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -76,11 +77,11 @@ end
 local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
 local gB = mkBtn("Godmode: ON", 46, Color3.fromRGB(0, 130, 0))
-local fzB = mkBtn("Freeze NPC: OFF", 82, Color3.fromRGB(80, 40, 100))
-local rdB = mkBtn("Range: unlimited", 118, Color3.fromRGB(0, 100, 180))
-local hB = mkBtn("Set Home (here)", 154, Color3.fromRGB(0, 80, 130))
-local stB = mkBtn("Status: OFF", 190, Color3.fromRGB(40, 40, 40))
+local hB = mkBtn("Set Home (here)", 82, Color3.fromRGB(0, 100, 180))
+local stB = mkBtn("Status: OFF", 118, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
+local infoB = mkBtn("Tools: 0", 154, Color3.fromRGB(30, 30, 30))
+infoB.TextSize = 10
 
 local credit = Instance.new("TextLabel")
 credit.Size = UDim2.new(1, 0, 0, 18)
@@ -142,100 +143,23 @@ local function applyGodmode()
 end
 
 -- ============================================================
--- FREEZE NPC (វិធីខ្លាំង - ព្យាយាមច្រើនបែប)
+-- រាប់ Tools
 -- ============================================================
-local function freezeNPCsForce()
-    if not freezeNPC then return end
-    
-    for _, o in pairs(workspace:GetDescendants()) do
-        if o:IsA("Model") and o ~= Ch then
-            local hum = o:FindFirstChildOfClass("Humanoid")
-            
-            if hum then
-                -- ពិនិត្យថាមិនមែន player
-                local isPl = false
-                for _, pl in pairs(P:GetPlayers()) do
-                    if pl.Character == o then isPl = true break end
-                end
-                
-                if not isPl then
-                    -- វិធី 1: បិទ AI + ឈប់ដើរ
-                    pcall(function()
-                        hum.WalkSpeed = 0
-                        hum.JumpPower = 0
-                        hum.PlatformStand = true
-                        hum.AutoRotate = false
-                        hum:MoveTo(o.PrimaryPart and o.PrimaryPart.Position or o:GetPivot().Position)
-                        hum:ChangeState(Enum.HumanoidStateType.Physics)
-                    end)
-                    
-                    -- វិធី 2: Anchored រាល់ part
-                    pcall(function()
-                        for _, part in pairs(o:GetDescendants()) do
-                            if part:IsA("BasePart") then
-                                part.Anchored = true
-                                part.CanCollide = false
-                            end
-                        end
-                    end)
-                    
-                    -- វិធី 3: លុប script AI ក្នុង NPC
-                    pcall(function()
-                        for _, s in pairs(o:GetDescendants()) do
-                            if s:IsA("Script") or s:IsA("LocalScript") then
-                                s.Disabled = true
-                            end
-                        end
-                    end)
-                    
-                    -- វិធី 4: ដាក់ NPC ចូលកន្លែងឆ្ងាយ
-                    pcall(function()
-                        local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
-                        if root and not o:GetAttribute("NhazXFrozen") then
-                            o:SetAttribute("NhazXFrozen", true)
-                            -- ផ្លាស់ទីទៅក្រោមដី
-                            root.CFrame = root.CFrame * CFrame.new(0, -100, 0)
-                        end
-                    end)
-                end
-            end
+local function countTools()
+    local n = 0
+    local c = LP.Character
+    if c then
+        for _, o in pairs(c:GetChildren()) do
+            if o:IsA("Tool") then n = n + 1 end
         end
     end
-end
-
--- ============================================================
--- ពិនិត្យ NPC ដេញ
--- ============================================================
-local function findChaser()
-    if not H or not H.Parent then return nil end
-
-    local closest = nil
-    local closestDist = math.huge
-
-    for _, o in pairs(workspace:GetDescendants()) do
-        if o:IsA("Model") and o ~= Ch then
-            local hum = o:FindFirstChildOfClass("Humanoid")
-            local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
-
-            if hum and root and hum.Health > 0 then
-                local isPl = false
-                for _, pl in pairs(P:GetPlayers()) do
-                    if pl.Character == o then isPl = true break end
-                end
-
-                if not isPl then
-                    local dist = (root.Position - H.Position).Magnitude
-                    -- ចាប់ NPC នៅជិតបំផុត
-                    if dist < closestDist then
-                        closestDist = dist
-                        closest = o
-                    end
-                end
-            end
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, o in pairs(bp:GetChildren()) do
+            if o:IsA("Tool") then n = n + 1 end
         end
     end
-
-    return closest, closestDist
+    return n
 end
 
 -- ============================================================
@@ -266,35 +190,35 @@ spawn(function()
             end)
         end
 
-        -- Freeze NPC
-        if freezeNPC then
-            freezeNPCsForce()
-        end
-
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        -- បើ Freeze បើក → មិន teleport
-        if freezeNPC then
-            stB.Text = "NPC Frozen (" .. tpCount .. ")"
-            continue
+        -- រាប់ Tools
+        local cnt = countTools()
+        infoB.Text = "Tools: " .. cnt
+        
+        -- Update baseline បើមិនទាន់
+        if cnt < lastCount then
+            -- បាត់ tool → update baseline
+            lastCount = cnt
         end
 
-        local chaser, dist = findChaser()
-
-        if chaser and dist < 100 then  -- ចម្ងាយជិត 100 → ដេញ
+        -- ពិនិត្យថាបាន egg ថ្មី
+        if cnt > lastCount then
             local t = tick()
             if t - lastTp > cooldown then
                 lastTp = t
-                lastChaseTime = t
                 tpCount = tpCount + 1
-                stB.Text = "TP #" .. tpCount .. ": " .. chaser.Name
+                stB.Text = "TP #" .. tpCount .. " (Tools: " .. cnt .. ")"
+                
+                -- Teleport home
                 tpHome()
-                print("[NhazX] #" .. tpCount .. " " .. chaser.Name .. " dist: " .. math.floor(dist))
-            end
-        else
-            if tick() - lastChaseTime > 2 then
-                stB.Text = "Watching... (" .. tpCount .. ")"
+                
+                print("[NhazX] #" .. tpCount .. " Tools: " .. lastCount .. " -> " .. cnt)
+                
+                -- Update baseline ក្រោយ teleport
+                task.wait(1)
+                lastCount = countTools()
             end
         end
     end
@@ -306,6 +230,8 @@ LP.CharacterAdded:Connect(function(c)
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
     applyGodmode()
+    task.wait(0.5)
+    lastCount = countTools()
 end)
 
 -- ============================================================
@@ -320,8 +246,8 @@ oB.MouseButton1Click:Connect(function()
         oB.BackgroundColor3 = Color3.fromRGB(0,180,0)
         bs.Color = Color3.fromRGB(0,255,0)
         stB.Text = "Watching..."
-        lastChaseTime = 0
         tpCount = 0
+        lastCount = countTools()
         applyGodmode()
     else
         oB.Text = "OFF"
@@ -343,28 +269,6 @@ gB.MouseButton1Click:Connect(function()
     end
 end)
 
-fzB.MouseButton1Click:Connect(function()
-    freezeNPC = not freezeNPC
-    if freezeNPC then
-        fzB.Text = "Freeze NPC: ON"
-        fzB.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-        freezeNPCsForce()
-        stB.Text = "NPC Frozen"
-    else
-        fzB.Text = "Freeze NPC: OFF"
-        fzB.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
-        stB.Text = "NPC Released"
-    end
-end)
-
-rdB.MouseButton1Click:Connect(function()
-    if rdB.Text == "Range: unlimited" then
-        rdB.Text = "Range: 50"
-    else
-        rdB.Text = "Range: unlimited"
-    end
-end)
-
 hB.MouseButton1Click:Connect(function()
     home = H.CFrame
     hB.Text = "Saved!"
@@ -374,4 +278,6 @@ hB.MouseButton1Click:Connect(function()
 end)
 
 applyGodmode()
-print("[NhazX v46] Script By @nhaz_samurai")
+lastCount = countTools()
+infoB.Text = "Tools: " .. lastCount
+print("[NhazX v47] Script By @nhaz_samurai")
