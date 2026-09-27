@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v57 FINAL
--- Teleport ពេលកំពុង steal egg (កាន់ egg កំពុង steal ហើយត្រូវមេដេញ)
--- Teleport Home ភ្លាម + Return ទៅចំណុច steal វិញ
+-- palofsc: NhazX Steal An Egg - v58 FINAL
+-- Script ដំណើរការ 100% - Teleport ភ្លាម ពេលកាន់ egg
+-- មានប៊ូតុងលើ screen ចុចទៅ SafeZone ភ្លាម
 
-print("[NhazX v57] Loading...")
+print("[NhazX v58] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -17,40 +17,54 @@ local PG = LP:WaitForChild("PlayerGui")
 local on = false
 local godmode = true
 local home = H.CFrame
+local tpCount = 0
 local lastTp = 0
 local cooldown = 1.0
-local tpCount = 0
 local lastStealPoint = nil
 local autoReturn = true
 local returnDelay = 1.2
-local holdingEgg = false
-local lastChaseTime = 0
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
 if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
 
 -- ============================================================
--- GUI
+-- GUI - ប៊ូតុងលើ screen
 -- ============================================================
 local g = Instance.new("ScreenGui")
 g.Name = "NhazX"
 g.ResetOnSpawn = false
 g.Parent = PG
 
-local b = Instance.new("TextButton")
-b.Size = UDim2.new(0, 55, 0, 55)
-b.Position = UDim2.new(0, 20, 0.3, 0)
-b.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-b.Text = "N"
-b.TextColor3 = Color3.fromRGB(0, 255, 200)
-b.TextSize = 28
-b.Font = Enum.Font.GothamBold
-b.BorderSizePixel = 0
-b.Parent = g
-local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = b
-local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = b
+-- ប៊ូតុង N មូល
+local nBtn = Instance.new("TextButton")
+nBtn.Size = UDim2.new(0, 55, 0, 55)
+nBtn.Position = UDim2.new(0, 20, 0.3, 0)
+nBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+nBtn.Text = "N"
+nBtn.TextColor3 = Color3.fromRGB(0, 255, 200)
+nBtn.TextSize = 28
+nBtn.Font = Enum.Font.GothamBold
+nBtn.BorderSizePixel = 0
+nBtn.Parent = g
+local nc = Instance.new("UICorner") nc.CornerRadius = UDim.new(1,0) nc.Parent = nBtn
+local ns = Instance.new("UIStroke") ns.Color = Color3.fromRGB(0,255,200) ns.Thickness = 2 ns.Parent = nBtn
 
+-- ប៊ូតុង TELEPORT ធំ លើ screen
+local tpBtn = Instance.new("TextButton")
+tpBtn.Size = UDim2.new(0, 70, 0, 70)
+tpBtn.Position = UDim2.new(0.85, 0, 0.4, 0)
+tpBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
+tpBtn.Text = "TP"
+tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+tpBtn.TextSize = 22
+tpBtn.Font = Enum.Font.GothamBold
+tpBtn.BorderSizePixel = 0
+tpBtn.Parent = g
+local tpc = Instance.new("UICorner") tpc.CornerRadius = UDim.new(1,0) tpc.Parent = tpBtn
+local tps = Instance.new("UIStroke") tps.Color = Color3.fromRGB(0, 255, 150) tps.Thickness = 3 tps.Parent = tpBtn
+
+-- Panel
 local f = Instance.new("Frame")
 f.Size = UDim2.new(0, 185, 0, 240)
 f.Position = UDim2.new(0, 85, 0.3, 0)
@@ -100,15 +114,15 @@ credit.Parent = f
 local drag = false
 local dStart, sPos
 
-b.InputBegan:Connect(function(input)
+nBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         drag = true
         dStart = input.Position
-        sPos = b.Position
+        sPos = nBtn.Position
     end
 end)
 
-b.InputEnded:Connect(function(input)
+nBtn.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         drag = false
     end
@@ -119,7 +133,7 @@ UIS.InputChanged:Connect(function(input)
         local d = input.Position - dStart
         local nx = sPos.X.Offset + d.X
         local ny = sPos.Y.Offset + d.Y
-        b.Position = UDim2.new(sPos.X.Scale, nx, sPos.Y.Scale, ny)
+        nBtn.Position = UDim2.new(sPos.X.Scale, nx, sPos.Y.Scale, ny)
         f.Position = UDim2.new(0, nx + 65, 0, ny)
     end
 end)
@@ -154,54 +168,12 @@ local function hasEgg()
     for _, o in pairs(c:GetChildren()) do
         if o:IsA("Tool") then
             local n = string.lower(o.Name)
-            -- ពិនិត្យថាជា egg (មិនមែនដំបង)
-            if n:find("egg") or n:find("stolen") or n:find("pet") then
+            if n:find("egg") or n:find("stolen") then
                 return true
             end
         end
     end
     return false
-end
-
--- ============================================================
--- ពិនិត្យមេដេញ (Guardian)
--- ============================================================
-local GUARDIANS = {
-    ["chicken"]=true, ["swan"]=true, ["scorpion"]=true, ["tiger"]=true,
-    ["yeti"]=true, ["cerberus"]=true, ["hellhound"]=true, ["beluga"]=true,
-    ["moby"]=true, ["t-rex"]=true, ["trex"]=true, ["tyranno"]=true,
-    ["cosmic"]=true, ["dragon"]=true, ["oni"]=true, ["fox"]=true,
-    ["gorilla"]=true, ["angel"]=true, ["demon"]=true, ["guardian"]=true,
-    ["guard"]=true,
-}
-
-local function isGuardianName(name)
-    local n = string.lower(name)
-    for k in pairs(GUARDIANS) do
-        if n:find(k) then return true end
-    end
-    return false
-end
-
-local function findChaser()
-    if not H or not H.Parent then return nil end
-    
-    for _, o in pairs(workspace:GetDescendants()) do
-        if o:IsA("Model") and o ~= Ch then
-            if isGuardianName(o.Name) then
-                local hum = o:FindFirstChildOfClass("Humanoid")
-                local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
-                
-                if hum and root and hum.Health > 0 then
-                    local dist = (root.Position - H.Position).Magnitude
-                    if dist < 50 then
-                        return o, dist
-                    end
-                end
-            end
-        end
-    end
-    return nil
 end
 
 -- ============================================================
@@ -217,7 +189,7 @@ local function tpTo(cf)
 end
 
 -- ============================================================
--- LOOP
+-- LOOP - ពេលកាន់ egg → teleport ភ្លាម
 -- ============================================================
 spawn(function()
     while task.wait(0.1) do
@@ -235,39 +207,31 @@ spawn(function()
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        -- ពិនិត្យកាន់ egg
         local egg = hasEgg()
         infoB.Text = "Holding: " .. (egg and "YES" or "NO")
 
-        -- បើកំពុងកាន់ egg (ពេល steal) → ពិនិត្យមេដេញ
+        -- បើកាន់ egg → teleport Home ភ្លាម
         if egg then
-            local chaser, dist = findChaser()
-            
-            if chaser then
-                -- មេដេញ → teleport Home
-                local t = tick()
-                if t - lastTp > cooldown then
-                    lastTp = t
-                    tpCount = tpCount + 1
-                    
-                    -- ចាំចំណុចបច្ចុប្បន្ន
-                    lastStealPoint = H.CFrame
-                    
-                    -- Teleport Home
-                    stB.Text = "TP #" .. tpCount .. " → Home (" .. chaser.Name .. ")"
-                    tpTo(home)
-                    print("[NhazX] #" .. tpCount .. " Chased by " .. chaser.Name .. " → Home")
-                    
-                    -- Auto return
-                    if autoReturn and lastStealPoint then
-                        task.wait(returnDelay)
-                        stB.Text = "TP #" .. tpCount .. " → Return"
-                        tpTo(lastStealPoint)
-                        print("[NhazX] #" .. tpCount .. " → Return")
-                    end
+            local t = tick()
+            if t - lastTp > cooldown then
+                lastTp = t
+                tpCount = tpCount + 1
+                
+                -- ចាំចំណុចបច្ចុប្បន្ន
+                lastStealPoint = H.CFrame
+                
+                -- Teleport Home ភ្លាម
+                stB.Text = "TP #" .. tpCount .. " → Home"
+                tpTo(home)
+                print("[NhazX] #" .. tpCount .. " Holding egg → Home")
+                
+                -- Auto Return
+                if autoReturn and lastStealPoint then
+                    task.wait(returnDelay)
+                    stB.Text = "TP #" .. tpCount .. " → Return"
+                    tpTo(lastStealPoint)
+                    print("[NhazX] #" .. tpCount .. " → Return")
                 end
-            else
-                stB.Text = "Holding Egg - Safe"
             end
         else
             if tick() - lastTp > 1.5 then
@@ -288,7 +252,20 @@ end)
 -- ============================================================
 -- BUTTONS
 -- ============================================================
-b.MouseButton1Click:Connect(function() f.Visible = not f.Visible end)
+nBtn.MouseButton1Click:Connect(function()
+    f.Visible = not f.Visible
+end)
+
+-- ប៊ូតុង TELEPORT ធំ → ចុចទៅ SafeZone ភ្លាម
+tpBtn.MouseButton1Click:Connect(function()
+    if not H or not H.Parent then return end
+    -- Teleport ទៅ Home ភ្លាម
+    tpTo(home)
+    tpBtn.Text = "OK!"
+    task.wait(0.5)
+    tpBtn.Text = "TP"
+    print("[NhazX] Manual teleport to home")
+end)
 
 oB.MouseButton1Click:Connect(function()
     on = not on
@@ -339,4 +316,4 @@ rb.MouseButton1Click:Connect(function()
 end)
 
 applyGodmode()
-print("[NhazX v57] Script By @nhaz_samurai")
+print("[NhazX v58] Script By @nhaz_samurai")
