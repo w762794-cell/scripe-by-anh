@@ -1,6 +1,6 @@
--- palofsc: NhazX UNIVERSAL - មិនត្រូវការឈ្មោះ egg
--- ពេលកាន់ Tool អ្វីក៏ដោយ (លើកលែង tool ដើម) → teleport Home ភ្លាម
--- ដំណើរការគ្រប់ game steal egg
+-- palofsc: NhazX STEAL + TELEPORT HOME + FREEZE ANIMALS
+-- ពេល steal egg បាន → teleport Home ភ្លាម
+-- ពេល steal សត្វ → freeze សត្វមិនឱ្យដេញ
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -9,13 +9,15 @@ local UIS = game:GetService("UserInputService")
 local LP = P.LocalPlayer
 local Ch = LP.Character or LP.CharacterAdded:Wait()
 local H = Ch:WaitForChild("HumanoidRootPart")
+local Hu = Ch:WaitForChild("Humanoid")
 local PG = LP:WaitForChild("PlayerGui")
 
 local on = false
 local home = H.CFrame
-local lastCount = 0
 local lastTp = 0
-local baselineTools = {}
+local lastCount = 0
+local frozenList = {}
+local networkCheckTime = 0
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -25,21 +27,6 @@ pcall(function()
         H:SetNetworkOwner(LP)
     end
 end)
-
--- កត់ត្រា tool ដើម (មុនពេលចាប់ផ្ដើម)
-local function recordBaseline()
-    baselineTools = {}
-    local c = LP.Character
-    if c then
-        for _, o in pairs(c:GetChildren()) do
-            if o:IsA("Tool") then
-                baselineTools[o.Name] = true
-            end
-        end
-    end
-end
-
-recordBaseline()
 
 -- លុប GUI ចាស់
 if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
@@ -66,7 +53,7 @@ local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = 
 local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = b
 
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 170, 0, 130)
+f.Size = UDim2.new(0, 170, 0, 165)
 f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
@@ -97,9 +84,21 @@ oB.BorderSizePixel = 0
 oB.Parent = f
 local oc = Instance.new("UICorner") oc.CornerRadius = UDim.new(0,8) oc.Parent = oB
 
+local freezeB = Instance.new("TextButton")
+freezeB.Size = UDim2.new(0, 140, 0, 26)
+freezeB.Position = UDim2.new(0, 15, 0, 76)
+freezeB.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+freezeB.Text = "Freeze Animals: OFF"
+freezeB.TextColor3 = Color3.fromRGB(255, 255, 255)
+freezeB.Font = Enum.Font.GothamBold
+freezeB.TextSize = 11
+freezeB.BorderSizePixel = 0
+freezeB.Parent = f
+local frc = Instance.new("UICorner") frc.CornerRadius = UDim.new(0,8) frc.Parent = freezeB
+
 local hB = Instance.new("TextButton")
 hB.Size = UDim2.new(0, 140, 0, 26)
-hB.Position = UDim2.new(0, 15, 0, 76)
+hB.Position = UDim2.new(0, 15, 0, 108)
 hB.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
 hB.Text = "Set Home (here)"
 hB.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -108,6 +107,8 @@ hB.TextSize = 12
 hB.BorderSizePixel = 0
 hB.Parent = f
 local hc = Instance.new("UICorner") hc.CornerRadius = UDim.new(0,8) hc.Parent = hB
+
+local freezeOn = false
 
 -- អូស GUI
 local dragging = false
@@ -139,18 +140,53 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- រាប់ចំនួន Tool ក្នុង Character (គ្មានឈ្មោះ)
+-- រាប់ Tool ក្នុង Character
 -- ============================================================
 local function countTools()
     local c = LP.Character
     if not c then return 0 end
-    local count = 0
+    local n = 0
     for _, o in pairs(c:GetChildren()) do
-        if o:IsA("Tool") then
-            count = count + 1
-        end
+        if o:IsA("Tool") then n = n + 1 end
     end
-    return count
+    return n
+end
+
+-- ============================================================
+-- FREEZE សត្វទាំងអស់
+-- ============================================================
+local function freezeAnimals()
+    if not freezeOn then return end
+    pcall(function()
+        for _, o in pairs(workspace:GetDescendants()) do
+            if o:IsA("Model") and o:FindFirstChild("Humanoid") then
+                local hum = o:FindFirstChild("Humanoid")
+                if hum then
+                    -- Freeze សត្វ
+                    pcall(function()
+                        hum.WalkSpeed = 0
+                        hum.JumpPower = 0
+                    end)
+                    -- Anchor root part
+                    local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
+                    if root then
+                        pcall(function()
+                            root.Anchored = true
+                        end)
+                    end
+                    frozenList[o] = true
+                end
+            end
+            -- ពិនិត្យ NPC ដែលមាន Tool ក្នុងដៃ
+            if o:IsA("Model") and o:FindFirstChildWhichIsA("Tool") then
+                local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
+                if root then
+                    pcall(function() root.Anchored = true end)
+                end
+                frozenList[o] = true
+            end
+        end
+    end)
 end
 
 -- ============================================================
@@ -161,9 +197,14 @@ spawn(function()
         if not on then continue end
         if not H or not H.Parent then continue end
 
+        -- Freeze សត្វ
+        if freezeOn then
+            freezeAnimals()
+        end
+
+        -- ពិនិត្យ tool ថ្មី
         local count = countTools()
 
-        -- បើចំនួន tool កើនឡើង → មានអ្វីថ្មី (egg)
         if count > lastCount then
             local t = tick()
             if t - lastTp > 1 then
@@ -181,7 +222,7 @@ spawn(function()
                     H.CFrame = home
                 end)
 
-                print("[NhazX] Tool ថ្មី → Teleport Home | Count: " .. count)
+                print("[NhazX] Steal បាន → Teleport Home | Tools: " .. count)
             end
         end
 
@@ -204,9 +245,9 @@ LP.CharacterAdded:Connect(function(c)
     task.wait(1)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
+    Hu = c:WaitForChild("Humanoid")
     pcall(function() H:SetNetworkOwner(LP) end)
     lastCount = 0
-    recordBaseline()
 end)
 
 -- ============================================================
@@ -224,6 +265,33 @@ oB.MouseButton1Click:Connect(function()
     end
 end)
 
+freezeB.MouseButton1Click:Connect(function()
+    freezeOn = not freezeOn
+    if freezeOn then
+        freezeB.Text = "Freeze Animals: ON"
+        freezeB.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+        freezeAnimals()
+    else
+        freezeB.Text = "Freeze Animals: OFF"
+        freezeB.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+        -- ដោះ freeze
+        pcall(function()
+            for model in pairs(frozenList) do
+                if model and model.Parent then
+                    local hum = model:FindFirstChild("Humanoid")
+                    if hum then
+                        hum.WalkSpeed = 16
+                        hum.JumpPower = 50
+                    end
+                    local root = model:FindFirstChild("HumanoidRootPart") or model.PrimaryPart
+                    if root then root.Anchored = false end
+                end
+            end
+        end)
+        frozenList = {}
+    end
+end)
+
 hB.MouseButton1Click:Connect(function()
     home = H.CFrame
     hB.Text = "Home Saved!"
@@ -232,7 +300,5 @@ hB.MouseButton1Click:Connect(function()
     print("[NhazX] New home: " .. tostring(home.Position))
 end)
 
--- កត់ត្រា baseline ចាប់ផ្ដើម
 lastCount = countTools()
-
 print("[NhazX] Ready | Tools: " .. lastCount)
