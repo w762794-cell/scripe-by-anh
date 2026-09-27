@@ -1,6 +1,6 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
 -- GUI: NhazX | Credit: script by @nhaz_samurai
--- Round mini toggle button: ចុច → បើក/បិទ GUI
+-- + Speed hack (ល្បឿនដើរ) + Auto-steal + Round mini toggle
 -- Paste into executor (Delta, Fluxus, Solara, Synapse, etc.)
 
 local Players = game:GetService("Players")
@@ -12,7 +12,7 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- =========================================================
--- CONFIG
+-- CONFIG / ការកំណត់
 -- =========================================================
 local CONFIG = {
     AutoSteal    = true,
@@ -22,6 +22,12 @@ local CONFIG = {
     AntiKick     = true,
     AntiLog      = true,
     LoopDelay    = 0.05,
+
+    -- Speed / ល្បឿន
+    SpeedEnabled = false,
+    WalkSpeed    = 100,   -- default 16
+    JumpPower    = 100,   -- default 50
+    JumpEnabled  = false,
 }
 
 -- =========================================================
@@ -66,6 +72,45 @@ local function enableOwnerBypass()
     end)
     setreadonly(mt, true)
 end
+
+-- =========================================================
+-- SPEED HACK / ល្បឿន
+-- =========================================================
+local function applySpeed()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    if CONFIG.SpeedEnabled then
+        hum.WalkSpeed = CONFIG.WalkSpeed
+    else
+        hum.WalkSpeed = 16
+    end
+
+    if CONFIG.JumpEnabled then
+        hum.UseJumpPower = true
+        hum.JumpPower = CONFIG.JumpPower
+    else
+        hum.UseJumpPower = true
+        hum.JumpPower = 50
+    end
+end
+
+-- អនុវត្តល្បឿនរៀងរាល់ 0.5 វិនាទី (ការពារ reset ពី game)
+task.spawn(function()
+    while task.wait(0.5) do
+        if CONFIG.SpeedEnabled or CONFIG.JumpEnabled then
+            applySpeed()
+        end
+    end
+end)
+
+-- អនុវត្តពេល respawn
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1)
+    applySpeed()
+end)
 
 -- =========================================================
 -- REMOTE CACHE
@@ -184,9 +229,8 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 999
 ScreenGui.Parent = PlayerGui
 
--- ===== Round Mini Button (រូបមូលតូច) =====
+-- Round mini button
 local MiniBtn = Instance.new("TextButton")
-MiniBtn.Name = "MiniBtn"
 MiniBtn.Size = UDim2.new(0, 50, 0, 50)
 MiniBtn.Position = UDim2.new(0, 30, 0, 150)
 MiniBtn.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
@@ -198,20 +242,12 @@ MiniBtn.TextSize = 22
 MiniBtn.Active = true
 MiniBtn.Draggable = true
 MiniBtn.Parent = ScreenGui
+local MiniCorner = Instance.new("UICorner"); MiniCorner.CornerRadius = UDim.new(1, 0); MiniCorner.Parent = MiniBtn
+local MiniStroke = Instance.new("UIStroke"); MiniStroke.Color = Color3.fromRGB(255, 255, 255); MiniStroke.Thickness = 2; MiniStroke.Parent = MiniBtn
 
-local MiniCorner = Instance.new("UICorner")
-MiniCorner.CornerRadius = UDim.new(1, 0)
-MiniCorner.Parent = MiniBtn
-
-local MiniStroke = Instance.new("UIStroke")
-MiniStroke.Color = Color3.fromRGB(255, 255, 255)
-MiniStroke.Thickness = 2
-MiniStroke.Parent = MiniBtn
-
--- ===== Main Frame (ផ្ទាំង GUI) =====
+-- Main frame
 local Main = Instance.new("Frame")
-Main.Name = "Main"
-Main.Size = UDim2.new(0, 250, 0, 340)
+Main.Size = UDim2.new(0, 260, 0, 420)
 Main.Position = UDim2.new(0, 30, 0, 210)
 Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 Main.BorderSizePixel = 0
@@ -219,15 +255,8 @@ Main.Active = true
 Main.Draggable = true
 Main.Visible = false
 Main.Parent = ScreenGui
-
-local UICorner = Instance.new("UICorner")
-UICorner.CornerRadius = UDim.new(0, 10)
-UICorner.Parent = Main
-
-local Stroke = Instance.new("UIStroke")
-Stroke.Color = Color3.fromRGB(255, 60, 60)
-Stroke.Thickness = 2
-Stroke.Parent = Main
+local UICorner = Instance.new("UICorner"); UICorner.CornerRadius = UDim.new(0, 10); UICorner.Parent = Main
+local Stroke = Instance.new("UIStroke"); Stroke.Color = Color3.fromRGB(255, 60, 60); Stroke.Thickness = 2; Stroke.Parent = Main
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
@@ -240,7 +269,6 @@ Title.TextSize = 18
 Title.Parent = Main
 local TitleCorner = Instance.new("UICorner"); TitleCorner.CornerRadius = UDim.new(0, 10); TitleCorner.Parent = Title
 
--- Close button / ប៊ូតុងបិទ
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 26, 0, 26)
 CloseBtn.Position = UDim2.new(1, -32, 0, 5)
@@ -264,30 +292,15 @@ Credit.Font = Enum.Font.Gotham
 Credit.TextSize = 11
 Credit.Parent = Main
 
-local Status = Instance.new("TextLabel")
-Status.Size = UDim2.new(1, -20, 0, 18)
-Status.Position = UDim2.new(0, 10, 0, 56)
-Status.BackgroundTransparency = 1
-Status.Text = "Status: idle"
-Status.TextColor3 = Color3.fromRGB(120, 255, 120)
-Status.Font = Enum.Font.Gotham
-Status.TextSize = 11
-Status.TextXAlignment = Enum.TextXAlignment.Left
-Status.Parent = Main
-
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size = UDim2.new(1, -20, 1, -110)
-Scroll.Position = UDim2.new(0, 10, 0, 80)
+Scroll.Size = UDim2.new(1, -20, 1, -70)
+Scroll.Position = UDim2.new(0, 10, 0, 60)
 Scroll.BackgroundTransparency = 1
 Scroll.BorderSizePixel = 0
 Scroll.ScrollBarThickness = 4
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 280)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 420)
 Scroll.Parent = Main
-
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Padding = UDim.new(0, 6)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Parent = Scroll
+local UIListLayout = Instance.new("UIListLayout"); UIListLayout.Padding = UDim.new(0, 6); UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder; UIListLayout.Parent = Scroll
 
 local function createToggle(name, order, default, callback)
     local Btn = Instance.new("TextButton")
@@ -312,12 +325,110 @@ local function createToggle(name, order, default, callback)
     end)
 end
 
+-- មុខងារ steal
 createToggle("Auto Steal", 1, CONFIG.AutoSteal, function(v) CONFIG.AutoSteal = v end)
 createToggle("Instant Claim", 2, CONFIG.InstantClaim, function(v) CONFIG.InstantClaim = v end)
 createToggle("Force Claim", 3, CONFIG.ForceClaim, function(v) CONFIG.ForceClaim = v end)
 createToggle("Anti Kick", 4, CONFIG.AntiKick, function(v) CONFIG.AntiKick = v end)
 createToggle("Anti Log", 5, CONFIG.AntiLog, function(v) CONFIG.AntiLog = v end)
 
+-- មុខងារល្បឿន
+createToggle("Speed Hack", 6, CONFIG.SpeedEnabled, function(v)
+    CONFIG.SpeedEnabled = v
+    applySpeed()
+end)
+createToggle("Jump Hack", 7, CONFIG.JumpEnabled, function(v)
+    CONFIG.JumpEnabled = v
+    applySpeed()
+end)
+
+-- Slider WalkSpeed
+local SpeedLabel = Instance.new("TextLabel")
+SpeedLabel.Size = UDim2.new(1, -8, 0, 22)
+SpeedLabel.BackgroundTransparency = 1
+SpeedLabel.Text = "WalkSpeed: " .. CONFIG.WalkSpeed
+SpeedLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+SpeedLabel.Font = Enum.Font.Gotham
+SpeedLabel.TextSize = 12
+SpeedLabel.LayoutOrder = 8
+SpeedLabel.Parent = Scroll
+
+local SpeedSlider = Instance.new("TextButton")
+SpeedSlider.Size = UDim2.new(1, -8, 0, 18)
+SpeedSlider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+SpeedSlider.BorderSizePixel = 0
+SpeedSlider.Text = ""
+SpeedSlider.LayoutOrder = 9
+SpeedSlider.Parent = Scroll
+local ssc = Instance.new("UICorner"); ssc.CornerRadius = UDim.new(0, 4); ssc.Parent = SpeedSlider
+local SpeedFill = Instance.new("Frame")
+SpeedFill.Size = UDim2.new(0.2, 0, 1, 0)
+SpeedFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+SpeedFill.BorderSizePixel = 0
+SpeedFill.Parent = SpeedSlider
+local sfc = Instance.new("UICorner"); sfc.CornerRadius = UDim.new(0, 4); sfc.Parent = SpeedFill
+
+-- Slider JumpPower
+local JumpLabel = Instance.new("TextLabel")
+JumpLabel.Size = UDim2.new(1, -8, 0, 22)
+JumpLabel.BackgroundTransparency = 1
+JumpLabel.Text = "JumpPower: " .. CONFIG.JumpPower
+JumpLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+JumpLabel.Font = Enum.Font.Gotham
+JumpLabel.TextSize = 12
+JumpLabel.LayoutOrder = 10
+JumpLabel.Parent = Scroll
+
+local JumpSlider = Instance.new("TextButton")
+JumpSlider.Size = UDim2.new(1, -8, 0, 18)
+JumpSlider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+JumpSlider.BorderSizePixel = 0
+JumpSlider.Text = ""
+JumpSlider.LayoutOrder = 11
+JumpSlider.Parent = Scroll
+local jsc = Instance.new("UICorner"); jsc.CornerRadius = UDim.new(0, 4); jsc.Parent = JumpSlider
+local JumpFill = Instance.new("Frame")
+JumpFill.Size = UDim2.new(0.5, 0, 1, 0)
+JumpFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+JumpFill.BorderSizePixel = 0
+JumpFill.Parent = JumpSlider
+local jfc = Instance.new("UICorner"); jfc.CornerRadius = UDim.new(0, 4); jfc.Parent = JumpFill
+
+local draggingSpeed, draggingJump = false, false
+
+SpeedSlider.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        draggingSpeed = true
+    end
+end)
+JumpSlider.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        draggingJump = true
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        draggingSpeed, draggingJump = false, false
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if i.UserInputType ~= Enum.UserInputType.MouseMovement and i.UserInputType ~= Enum.UserInputType.Touch then return end
+    if draggingSpeed then
+        local rel = math.clamp((i.Position.X - SpeedSlider.AbsolutePosition.X) / SpeedSlider.AbsoluteSize.X, 0, 1)
+        SpeedFill.Size = UDim2.new(rel, 0, 1, 0)
+        CONFIG.WalkSpeed = math.floor(rel * 500) + 16
+        SpeedLabel.Text = "WalkSpeed: " .. CONFIG.WalkSpeed
+        applySpeed()
+    elseif draggingJump then
+        local rel = math.clamp((i.Position.X - JumpSlider.AbsolutePosition.X) / JumpSlider.AbsoluteSize.X, 0, 1)
+        JumpFill.Size = UDim2.new(rel, 0, 1, 0)
+        CONFIG.JumpPower = math.floor(rel * 500) + 50
+        JumpLabel.Text = "JumpPower: " .. CONFIG.JumpPower
+        applySpeed()
+    end
+end)
+
+-- Manual button
 local ManualBtn = Instance.new("TextButton")
 ManualBtn.Size = UDim2.new(1, -8, 0, 34)
 ManualBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
@@ -326,32 +437,30 @@ ManualBtn.Text = "STEAL NOW"
 ManualBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 ManualBtn.Font = Enum.Font.GothamBold
 ManualBtn.TextSize = 13
-ManualBtn.LayoutOrder = 6
+ManualBtn.LayoutOrder = 12
 ManualBtn.Parent = Scroll
 local mc = Instance.new("UICorner"); mc.CornerRadius = UDim.new(0, 6); mc.Parent = ManualBtn
 
 ManualBtn.MouseButton1Click:Connect(function()
-    Status.Text = "Status: stealing..."
     local eggs = getAllEggs()
     for _, e in ipairs(eggs) do forceClaim(e) end
-    Status.Text = "Status: done (" .. #eggs .. ")"
 end)
 
--- ===== Toggle GUI (មូលតូច ↔ ផ្ទាំង) =====
+-- Toggle GUI
 local guiOpen = false
 local function toggleGUI()
     guiOpen = not guiOpen
     if guiOpen then
         Main.Visible = true
-        Main.Size = UDim2.new(0, 250, 0, 0)
-        TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Quart, Enum.EasingDirection.Out), {
-            Size = UDim2.new(0, 250, 0, 340)
+        Main.Size = UDim2.new(0, 260, 0, 0)
+        TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 260, 0, 420)
         }):Play()
         MiniBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 60)
         MiniBtn.Text = "−"
     else
-        local t = TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quart, Enum.EasingDirection.In), {
-            Size = UDim2.new(0, 250, 0, 0)
+        local t = TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {
+            Size = UDim2.new(0, 260, 0, 0)
         })
         t:Play()
         t.Completed:Connect(function() Main.Visible = false end)
@@ -370,16 +479,13 @@ if CONFIG.AntiKick then enableAntiKick() end
 if CONFIG.AntiLog then enableAntiLog() end
 enableOwnerBypass()
 cacheRemotes()
+applySpeed()
 
-task.spawn(function()
-    while task.wait(3) do cacheRemotes() end
-end)
-
+task.spawn(function() while task.wait(3) do cacheRemotes() end end)
 task.spawn(function()
     while task.wait(CONFIG.LoopDelay) do
         if CONFIG.AutoSteal then
-            local eggs = getAllEggs()
-            for _, e in ipairs(eggs) do
+            for _, e in ipairs(getAllEggs()) do
                 if CONFIG.InstantClaim then forceClaim(e) end
             end
         end
@@ -388,6 +494,6 @@ end)
 
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "NhazX",
-    Text = "Loaded | script by @nhaz_samurai",
+    Text = "Loaded + Speed | script by @nhaz_samurai",
     Duration = 5
 })
