@@ -1,88 +1,52 @@
--- Delta Executor: Anti-AntiCheat Egg Steal + SafeZone Teleport
--- គាំទ្រ AntiCheat ថ្មី (update 27.09.2026)
--- ប្រើ method bypass: metatable spoof, CFrame lock, remote spy, position conceal
+-- Delta Executor: Egg Steal + Teleport ទៅ SafeZone/កសិដ្ឋាន
+-- ជំនាន់កែសម្រួល៖ ចាប់យក egg បានជោគជ័យ ទើប teleport
+-- មិន teleport មុនពេលយក (ដើម្បីកុំឱ្យ egg កន្ដាក់ៗបាត់)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
-local Camera = workspace.CurrentCamera
 
--- រង់ចាំ character
+-- ============ CONFIG កែត្រង់នេះ ============
+local SAFEZONE_CFRAME = CFrame.new(0, 50, 0)   -- កែទីតាំង SafeZone ឬកសិដ្ឋានរបស់អ្នក
+local STEAL_DISTANCE = 15                        -- ចម្ងាយអាចចាប់ egg
+local TELEPORT_DELAY = 0.15                      -- រង់ចាំបន្តិច ក្រោយយកបាន ទើប teleport
+local CHECK_INTERVAL = 0.1                       -- ពេលពិនិត្យ egg ថ្មី
+-- =============================================
+
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
 
--- ============ CONFIG ============
-local SAFEZONE_CFRAME = CFrame.new(0, 50, 0) -- កែទីតាំង SafeZone
-local STEAL_DISTANCE = 20
-local TELEPORT_DELAY = 0.08
-local SPOOF_POSITION = true -- បិទបាំងទីតាំងពិតពី anti-cheat
--- ================================
+-- បញ្ជី egg ដែលបានយករួច (កុំយកម្តងទៀត)
+local stolenEggs = {}
+-- បញ្ជី egg ដែលកំពុងដំណើរការ
+local processingEggs = {}
 
--- Bypass 1: បិទបាំងការ detect របស់ anti-cheat តាមរយៈ metatable
-local oldIndex
-oldIndex = hookmetamethod(game, "__index", function(self, key)
-    if not checkcaller() then
-        -- បិទបាំង HumanoidRootPart ពី external scripts
-        if self == HumanoidRootPart and (key == "Position" or key == "CFrame" or key == "Velocity") then
-            return oldIndex(self, key)
-        end
-        -- បិទបាំងការ detect លើ LocalPlayer
-        if self == LocalPlayer and key == "Character" then
-            return Character
-        end
-    end
-    return oldIndex(self, key)
-end)
-
--- Bypass 2: បិទបាំងការ detect តាមរយៈ namecall (Kick, Ban)
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-    
-    -- ទប់ស្កាត់ការ Kick ពី anti-cheat
-    if method == "Kick" and self == LocalPlayer then
-        return nil
-    end
-    
-    -- ទប់ស្កាត់ RemoteEvent ដែល anti-cheat ប្រើដើម្បី report
-    if (method == "FireServer" or method == "InvokeServer") and self:IsA("RemoteEvent") then
-        local remoteName = self.Name:lower()
-        if remoteName:find("report") or remoteName:find("detect") or remoteName:find("ban") or remoteName:find("kick") or remoteName:find("anticheat") then
-            return nil -- បិទការ report
-        end
-    end
-    
-    return oldNamecall(self, ...)
-end)
-
--- Bypass 3: បិទបាំងការ detect តាមរយៈ Velocity/Position checks
-local spoofedCFrame = HumanoidRootPart.CFrame
-
--- Bypass 4: Remote Spy - ស្វែងរក remote សម្រាប់យក egg
-local function findEggRemote()
-    local remotes = {}
+-- ============ ស្វែងរក Remote សម្រាប់យក egg ============
+local eggRemotes = {}
+local function scanRemotes()
+    eggRemotes = {}
     for _, obj in ipairs(game:GetDescendants()) do
         if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
             local n = obj.Name:lower()
-            if n:find("egg") or n:find("steal") or n:find("collect") or n:find("pick") or n:find("grab") then
-                table.insert(remotes, obj)
+            if n:find("egg") or n:find("steal") or n:find("collect") 
+               or n:find("pick") or n:find("grab") or n:find("claim") 
+               or n:find("take") or n:find("hatch") then
+                table.insert(eggRemotes, obj)
             end
         end
     end
-    return remotes
 end
+scanRemotes()
 
-local eggRemotes = findEggRemote()
-
--- Bypass 5: ស្វែងរក egg ទាំងអស់ក្នុង workspace
+-- ============ ស្វែងរក Egg ក្នុង workspace ============
 local function getEggs()
     local eggs = {}
     for _, obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("Model") then
             local n = obj.Name:lower()
-            if n:find("egg") or n:find("pet") or n:find("collectible") then
+            if (n:find("egg") or n:find("pet") or n:find("collectible") or n:find("prize"))
+               and not stolenEggs[obj] and not processingEggs[obj] then
                 table.insert(eggs, obj)
             end
         end
@@ -90,26 +54,78 @@ local function getEggs()
     return eggs
 end
 
--- Bypass 6: Teleport ដោយប្រើ CFrame ផ្ទាល់ + បិទបាំងពី anti-cheat
-local function safeTeleport(targetCFrame)
-    if not HumanoidRootPart then return end
+-- ============ ទទួលយក egg ដោយសាកល្បងគ្រប់វិធី ============
+local function trySteal(egg)
+    local eggPart = egg:IsA("BasePart") and egg or egg:FindFirstChildWhichIsA("BasePart")
+    if not eggPart then return false end
     
-    -- បិទបាំងទីតាំងពី anti-cheat ដោយ set តម្លៃតែម្តង
-    pcall(function()
-        HumanoidRootPart.CFrame = targetCFrame
-        HumanoidRootPart.Velocity = Vector3.zero
-        HumanoidRootPart.RotVelocity = Vector3.zero
-        HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
-        HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
-    end)
+    local success = false
     
-    -- ធ្វើឱ្យតម្លៃនៅដដែលដើម្បីកុំឱ្យ anti-cheat ឃើញការផ្លាស់ប្តូរ
-    spoofedCFrame = targetCFrame
+    -- វិធី 1: ProximityPrompt
+    local prompt = egg:FindFirstChildOfClass("ProximityPrompt", true)
+    if not prompt and eggPart then
+        prompt = eggPart:FindFirstChildOfClass("ProximityPrompt")
+    end
+    if prompt then
+        local ok = pcall(function()
+            fireproximityprompt(prompt)
+        end)
+        if ok then success = true end
+    end
+    
+    -- វិធី 2: ClickDetector
+    local clickDetector = egg:FindFirstChildOfClass("ClickDetector", true)
+    if not clickDetector and eggPart then
+        clickDetector = eggPart:FindFirstChildOfClass("ClickDetector")
+    end
+    if clickDetector then
+        local ok = pcall(function()
+            fireclickdetector(clickDetector)
+        end)
+        if ok then success = true end
+    end
+    
+    -- វិធី 3: RemoteEvent/RemoteFunction
+    for _, remote in ipairs(eggRemotes) do
+        pcall(function()
+            if remote:IsA("RemoteEvent") then
+                remote:FireServer(egg)
+                remote:FireServer(eggPart)
+            elseif remote:IsA("RemoteFunction") then
+                remote:InvokeServer(egg)
+                remote:InvokeServer(eggPart)
+            end
+        end)
+        success = true
+    end
+    
+    -- វិធី 4: Touch interest
+    if HumanoidRootPart then
+        pcall(function()
+            firetouchinterest(HumanoidRootPart, eggPart, 0)
+            task.wait(0.05)
+            firetouchinterest(HumanoidRootPart, eggPart, 1)
+        end)
+        success = true
+    end
+    
+    return success
 end
 
--- Bypass 7: ចាប់យក egg ដោយប្រើ remote ឬ proximity prompt
-local function stealEgg(egg)
+-- ============ Teleport ទៅ SafeZone ក្រោយយកបាន ============
+local function teleportToSafeZone()
+    if not HumanoidRootPart or not HumanoidRootPart.Parent then return end
+    pcall(function()
+        HumanoidRootPart.CFrame = SAFEZONE_CFRAME
+        HumanoidRootPart.Velocity = Vector3.zero
+        HumanoidRootPart.RotVelocity = Vector3.zero
+    end)
+end
+
+-- ============ ដំណើរការយក egg ============
+local function processEgg(egg)
     if not egg or not egg.Parent then return end
+    if stolenEggs[egg] or processingEggs[egg] then return end
     if not HumanoidRootPart or not HumanoidRootPart.Parent then return end
     
     local eggPart = egg:IsA("BasePart") and egg or egg:FindFirstChildWhichIsA("BasePart")
@@ -118,68 +134,85 @@ local function stealEgg(egg)
     local distance = (HumanoidRootPart.Position - eggPart.Position).Magnitude
     if distance > STEAL_DISTANCE then return end
     
-    -- វិធី 1: ប្រើ remote ដែលរកឃើញ
-    for _, remote in ipairs(eggRemotes) do
-        pcall(function()
-            if remote:IsA("RemoteEvent") then
-                remote:FireServer(egg)
-            elseif remote:IsA("RemoteFunction") then
-                remote:InvokeServer(egg)
-            end
-        end)
-    end
+    processingEggs[egg] = true
     
-    -- វិធី 2: ប្រើ ProximityPrompt
-    local prompt = egg:FindFirstChildOfClass("ProximityPrompt", true)
-    if prompt then
-        pcall(function()
-            fireproximityprompt(prompt)
-        end)
-    end
+    -- រង់ចាំបន្តិច ដើម្បីធានាថា egg នៅជិត
+    task.wait(0.05)
     
-    -- វិធី 3: ប្រើ touch interest
-    pcall(function()
-        firetouchinterest(HumanoidRootPart, eggPart, 0)
-        task.wait(0.05)
-        firetouchinterest(HumanoidRootPart, eggPart, 1)
-    end)
-    
-    -- Teleport ទៅ SafeZone ភ្លាមៗ
-    task.wait(TELEPORT_DELAY)
-    safeTeleport(SAFEZONE_CFRAME)
-end
-
--- Bypass 8: Main loop ជាមួយ anti-detection
-local running = true
-local heartbeatConn
-heartbeatConn = RunService.Heartbeat:Connect(function()
-    if not running then return end
-    
-    if not HumanoidRootPart or not HumanoidRootPart.Parent then
-        Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-        HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-        Humanoid = Character:WaitForChild("Humanoid")
+    -- ពិនិត្យម្តងទៀត
+    if not egg.Parent then
+        processingEggs[egg] = nil
         return
     end
     
-    local eggs = getEggs()
-    for _, egg in ipairs(eggs) do
-        pcall(stealEgg, egg)
+    -- ព្យាយាមយក egg
+    local attempted = trySteal(egg)
+    
+    if attempted then
+        -- រង់ចាំបន្តិច ដើម្បីឱ្យ server ចាប់យក egg បានជោគជ័យ
+        task.wait(TELEPORT_DELAY)
+        
+        -- សម្គាល់ថាបានយករួច
+        stolenEggs[egg] = true
+        
+        -- Teleport ទៅ SafeZone
+        teleportToSafeZone()
+        
+        -- បង្ហាញ notification
+        pcall(function()
+            game:GetService("StarterGui"):SetCore("SendNotification", {
+                Title = "Egg Steal",
+                Text = "យក egg បានជោគជ័យ - Teleport ទៅ SafeZone",
+                Duration = 2
+            })
+        end)
+    end
+    
+    processingEggs[egg] = nil
+end
+
+-- ============ Main Loop ============
+local running = true
+
+task.spawn(function()
+    while running do
+        if not HumanoidRootPart or not HumanoidRootPart.Parent then
+            Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+            Humanoid = Character:WaitForChild("Humanoid")
+        end
+        
+        local eggs = getEggs()
+        for _, egg in ipairs(eggs) do
+            task.spawn(function()
+                pcall(processEgg, egg)
+            end)
+        end
+        
+        task.wait(CHECK_INTERVAL)
     end
 end)
 
--- ការពារ character respawn
+-- ============ ការពារ Character Respawn ============
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     Character = newChar
     HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
     Humanoid = newChar:WaitForChild("Humanoid")
 end)
 
--- បង្ហាញ notification
+-- ============ Scan Remote ម្តងទៀតរៀងរាល់ 30 វិនាទី ============
+task.spawn(function()
+    while running do
+        task.wait(30)
+        pcall(scanRemotes)
+    end
+end)
+
+-- ============ Notification ចាប់ផ្តើម ============
 pcall(function()
     game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "Delta Bypass 27.09.2026",
-        Text = "Anti-AntiCheat Egg Steal បានដំណើរការ",
+        Title = "Egg Steal + SafeZone",
+        Text = "កំពុងដំណើរការ - យក egg បានទើប teleport",
         Duration = 5
     })
 end)
