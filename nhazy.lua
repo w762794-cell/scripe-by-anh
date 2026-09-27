@@ -1,357 +1,272 @@
--- palofsc: NhazX FIX TELEPORT + ANTI-CHEAT BYPASS - v62
--- Bypass anti-cheat ខ្លាំងសម្រាប់ Update 26-27.09.2026
--- Teleport ជាន់ៗ + NetworkOwner + Hook Protection
+-- Roblox: Steal an Egg / Steal a Brainrot
+-- GUI: NhazX | Credit: script by @nhaz_samurai
+-- Auto-claim + Anti-Kick + Anti-Log + Owner bypass
+-- Paste into executor (Delta, Fluxus, Solara, Synapse, etc.)
 
-print("[NhazX v62] Loading...")
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
-local P = game:GetService("Players")
-local S = game:GetService("RunService")
-local UIS = game:GetService("UserInputService")
+-- =========================================================
+-- CONFIG / ការកំណត់
+-- =========================================================
+local CONFIG = {
+    AutoSteal   = true,
+    StealRange  = 12,
+    AntiKick    = true,
+    AntiLog     = true,
+    LoopDelay   = 0.05,
+}
 
-local LP = P.LocalPlayer
-local Ch = LP.Character or LP.CharacterAdded:Wait()
-local H = Ch:WaitForChild("HumanoidRootPart")
-local Hu = Ch:WaitForChild("Humanoid")
-local PG = LP:WaitForChild("PlayerGui")
-
-local home = H.CFrame
-local isTeleporting = false
-local lastTp = 0
-local cooldown = 2.5
-local originalSpeed = Hu.WalkSpeed
-local lastCFrame = H.CFrame
-
-print("[NhazX] Home: " .. tostring(home.Position))
-
-if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
-
--- ============================================================
--- ANTI-CHEAT BYPASS (ខ្លាំង)
--- ============================================================
-local bypassActive = false
-
-local function setupBypass()
-    local success = pcall(function()
-        local mt = getrawmetatable(game)
-        if not mt then return false end
-        
-        local oldIndex = mt.__index
-        local oldNewIndex = mt.__newindex
-        local oldNamecall = mt.__namecall
-        
-        setreadonly(mt, false)
-        
-        -- Hook __index - លាក់ CFrame ពិត
-        mt.__index = newcclosure(function(self, key)
-            if self == H and key == "CFrame" then
-                if isTeleporting then
-                    return lastCFrame
-                end
-            end
-            if self == Hu then
-                if key == "WalkSpeed" then
-                    return originalSpeed
-                end
-            end
-            return oldIndex(self, key)
-        end)
-        
-        -- Hook __newindex - ចាប់ការកែប្រែ
-        mt.__newindex = newcclosure(function(self, key, value)
-            if self == H and key == "CFrame" then
-                if not isTeleporting then
-                    lastCFrame = value
-                end
-                return oldNewIndex(self, key, value)
-            end
-            return oldNewIndex(self, key, value)
-        end)
-        
-        setreadonly(mt, true)
-        return true
-    end)
-    
-    if success then
-        bypassActive = true
-        print("[NhazX] Anti-cheat bypass ACTIVE")
-    else
-        print("[NhazX] Bypass FAILED - hook not available")
-    end
-end
-
--- ព្យាយាមបើក bypass
-pcall(setupBypass)
-
--- ============================================================
--- NETWORK OWNER LOOP
--- ============================================================
-spawn(function()
-    while task.wait(1) do
-        pcall(function()
-            if H and H.Parent then
-                if H:GetNetworkOwner() ~= LP then
-                    H:SetNetworkOwner(LP)
-                end
-            end
-        end)
-    end
-end)
-
--- ============================================================
--- GODMODE (ការពារស្លាប់)
--- ============================================================
-spawn(function()
-    while task.wait(0.2) do
-        pcall(function()
-            if Ch and Ch.Parent then
-                local hum = Ch:FindFirstChildOfClass("Humanoid")
-                if hum then
-                    if hum.Health < hum.MaxHealth then
-                        hum.Health = hum.MaxHealth
-                    end
-                end
-                -- ForceField
-                if not Ch:FindFirstChild("NhazXShield") then
-                    local ff = Instance.new("ForceField")
-                    ff.Name = "NhazXShield"
-                    ff.Visible = false
-                    ff.Parent = Ch
-                end
-            end
-        end)
-    end
-end)
-
--- ============================================================
--- GUI
--- ============================================================
-local g = Instance.new("ScreenGui")
-g.Name = "NhazX"
-g.ResetOnSpawn = false
-g.Parent = PG
-
-local nBtn = Instance.new("TextButton")
-nBtn.Size = UDim2.new(0, 55, 0, 55)
-nBtn.Position = UDim2.new(0, 20, 0.3, 0)
-nBtn.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-nBtn.Text = "N"
-nBtn.TextColor3 = Color3.fromRGB(0, 255, 200)
-nBtn.TextSize = 28
-nBtn.Font = Enum.Font.GothamBold
-nBtn.BorderSizePixel = 0
-nBtn.Parent = g
-local nc = Instance.new("UICorner") nc.CornerRadius = UDim.new(1,0) nc.Parent = nBtn
-local ns = Instance.new("UIStroke") ns.Color = Color3.fromRGB(0,255,200) ns.Thickness = 2 ns.Parent = nBtn
-
-local tpBtn = Instance.new("TextButton")
-tpBtn.Size = UDim2.new(0, 80, 0, 80)
-tpBtn.Position = UDim2.new(0.82, 0, 0.4, 0)
-tpBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 100)
-tpBtn.Text = "TP"
-tpBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-tpBtn.TextSize = 24
-tpBtn.Font = Enum.Font.GothamBold
-tpBtn.BorderSizePixel = 0
-tpBtn.Parent = g
-local tpc = Instance.new("UICorner") tpc.CornerRadius = UDim.new(1,0) tpc.Parent = tpBtn
-local tps = Instance.new("UIStroke") tps.Color = Color3.fromRGB(0, 255, 150) tps.Thickness = 3 tps.Parent = tpBtn
-
-local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 185, 0, 180)
-f.Position = UDim2.new(0, 85, 0.3, 0)
-f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-f.BorderSizePixel = 0
-f.Visible = false
-f.Parent = g
-local fc = Instance.new("UICorner") fc.CornerRadius = UDim.new(0,14) fc.Parent = f
-local fs = Instance.new("UIStroke") fs.Color = Color3.fromRGB(0,255,200) fs.Thickness = 1.5 fs.Parent = f
-
-local function mkBtn(txt, y, col)
-    local x = Instance.new("TextButton")
-    x.Size = UDim2.new(0, 155, 0, 30)
-    x.Position = UDim2.new(0, 15, 0, y)
-    x.BackgroundColor3 = col or Color3.fromRGB(55,55,55)
-    x.Text = txt
-    x.TextColor3 = Color3.fromRGB(255,255,255)
-    x.Font = Enum.Font.GothamBold
-    x.TextSize = 12
-    x.BorderSizePixel = 0
-    x.Parent = f
-    local cc = Instance.new("UICorner") cc.CornerRadius = UDim.new(0,8) cc.Parent = x
-    return x
-end
-
-local hB = mkBtn("Set Home (here)", 10, Color3.fromRGB(0, 100, 180))
-local tB = mkBtn("Teleport", 44, Color3.fromRGB(0, 180, 100))
-local bB = mkBtn("Bypass: CHECKING", 78, Color3.fromRGB(80, 40, 100))
-local stB = mkBtn("Ready", 112, Color3.fromRGB(40, 40, 40))
-stB.TextSize = 10
-
-local credit = Instance.new("TextLabel")
-credit.Size = UDim2.new(1, 0, 0, 16)
-credit.Position = UDim2.new(0, 0, 1, -18)
-credit.BackgroundTransparency = 1
-credit.Text = "Script By @nhaz_samurai"
-credit.TextColor3 = Color3.fromRGB(0, 255, 200)
-credit.Font = Enum.Font.GothamBold
-credit.TextSize = 10
-credit.Parent = f
-
--- អូស GUI
-local drag = false
-local dStart, sPos
-
-nBtn.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        drag = true
-        dStart = input.Position
-        sPos = nBtn.Position
-    end
-end)
-
-nBtn.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        drag = false
-    end
-end)
-
-UIS.InputChanged:Connect(function(input)
-    if drag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local d = input.Position - dStart
-        local nx = sPos.X.Offset + d.X
-        local ny = sPos.Y.Offset + d.Y
-        nBtn.Position = UDim2.new(sPos.X.Scale, nx, sPos.Y.Scale, ny)
-        f.Position = UDim2.new(0, nx + 65, 0, ny)
-    end
-end)
-
--- ============================================================
--- STEALTH TELEPORT
--- ============================================================
-local function stealthTP(targetCF)
-    if not H or not H.Parent then return false end
-    if isTeleporting then return false end
-
-    local now = tick()
-    if now - lastTp < cooldown then
-        stB.Text = "Wait " .. math.ceil(cooldown - (now - lastTp)) .. "s"
-        return false
-    end
-
-    isTeleporting = true
-    lastTp = now
-    stB.Text = "Teleporting..."
-
-    -- NetworkOwner
-    pcall(function()
-        if H:GetNetworkOwner() ~= LP then
-            H:SetNetworkOwner(LP)
+-- =========================================================
+-- ANTI-KICK / ការពារការបណ្តេញ
+-- =========================================================
+local function enableAntiKick()
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        if getnamecallmethod() == "Kick" and self == LocalPlayer then
+            return nil
         end
+        return oldNamecall(self, ...)
     end)
-
-    task.wait(0.1)
-
-    -- Teleport ជាន់ៗ 10 steps
-    local startPos = H.Position
-    local targetPos = targetCF.Position
-    local steps = 10
-
-    for i = 1, steps do
-        local pos = startPos:Lerp(targetPos, i / steps)
-        pcall(function()
-            H.CFrame = CFrame.new(pos)
-        end)
-        task.wait(0.05)
-    end
-
-    -- ចុងក្រោយ
-    task.wait(0.15)
-    pcall(function()
-        H.Velocity = Vector3.zero
-        H.AssemblyLinearVelocity = Vector3.zero
-        H.CFrame = targetCF
-    end)
-
-    task.wait(0.2)
-    pcall(function()
-        H.CFrame = targetCF
-    end)
-
-    isTeleporting = false
-    stB.Text = "Teleported!"
-    return true
+    setreadonly(mt, true)
 end
 
--- ============================================================
--- BUTTONS
--- ============================================================
-nBtn.MouseButton1Click:Connect(function()
-    f.Visible = not f.Visible
-end)
-
-tpBtn.MouseButton1Click:Connect(function()
-    if stealthTP(home) then
-        tpBtn.Text = "OK!"
-        task.wait(0.5)
-        tpBtn.Text = "TP"
-    else
-        tpBtn.Text = "WAIT"
-        task.wait(0.5)
-        tpBtn.Text = "TP"
+-- =========================================================
+-- ANTI-LOG / ទប់ស្កាត់ log
+-- =========================================================
+local function enableAntiLog()
+    for _, obj in pairs(game:GetDescendants()) do
+        if obj:IsA("RemoteEvent") and obj.Name:lower():find("log") then
+            pcall(function() obj:Destroy() end)
+        end
     end
-end)
-
-tB.MouseButton1Click:Connect(function()
-    if stealthTP(home) then
-        tB.Text = "Done!"
-        task.wait(0.8)
-        tB.Text = "Teleport"
-    end
-end)
-
-bB.MouseButton1Click:Connect(function()
-    if bypassActive then
-        bB.Text = "Bypass: ACTIVE"
-        bB.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
-    else
-        bB.Text = "Bypass: FAILED"
-        bB.BackgroundColor3 = Color3.fromRGB(130, 0, 0)
-    end
-    task.wait(2)
-    if bypassActive then
-        bB.Text = "Bypass: ACTIVE"
-    else
-        bB.Text = "Bypass: CHECKING"
-    end
-end)
-
-hB.MouseButton1Click:Connect(function()
-    home = H.CFrame
-    stB.Text = "Home: " .. math.floor(home.Position.X) .. "," .. math.floor(home.Position.Z)
-    hB.Text = "Saved!"
-    task.wait(1)
-    hB.Text = "Set Home (here)"
-    print("[NhazX] Home: " .. tostring(home.Position))
-end)
-
-LP.CharacterAdded:Connect(function(c)
-    task.wait(0.5)
-    Ch = c
-    H = c:WaitForChild("HumanoidRootPart")
-    Hu = c:WaitForChild("Humanoid")
-    originalSpeed = Hu.WalkSpeed
-    lastCFrame = H.CFrame
-    isTeleporting = false
-end)
-
--- Update bypass status
-task.wait(1)
-if bypassActive then
-    bB.Text = "Bypass: ACTIVE"
-    bB.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
-else
-    bB.Text = "Bypass: FAILED"
-    bB.BackgroundColor3 = Color3.fromRGB(130, 0, 0)
 end
 
-print("[NhazX v62] Ready | Bypass: " .. tostring(bypassActive))
+-- =========================================================
+-- OWNER BYPASS / ឆ្លងកាត់ម្ចាស់
+-- =========================================================
+local function enableOwnerBypass()
+    local mt = getrawmetatable(game)
+    local oldIndex = mt.__index
+    setreadonly(mt, false)
+    mt.__index = newcclosure(function(self, key)
+        if key == "OwnerId" or key == "CreatorId" then
+            return LocalPlayer.UserId
+        end
+        return oldIndex(self, key)
+    end)
+    setreadonly(mt, true)
+end
+
+-- =========================================================
+-- STEAL LOGIC / តក្កៈលួច
+-- =========================================================
+local function getNearestEgg()
+    local nearest, dist = nil, math.huge
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local root = char.HumanoidRootPart
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("egg") or obj.Name:lower():find("brainrot")) then
+            local d = (obj.Position - root.Position).Magnitude
+            if d < dist and d <= CONFIG.StealRange then
+                nearest, dist = obj, d
+            end
+        end
+    end
+    return nearest
+end
+
+local function claimEgg(egg)
+    if not egg then return end
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    char.HumanoidRootPart.CFrame = egg.CFrame + Vector3.new(0, 2, 0)
+
+    for _, r in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+        if r:IsA("RemoteEvent") and (r.Name:lower():find("steal") or r.Name:lower():find("claim") or r.Name:lower():find("take")) then
+            pcall(function() r:FireServer(egg) end)
+        end
+    end
+    pcall(function()
+        egg.Parent = LocalPlayer:FindFirstChild("Backpack") or char
+    end)
+end
+
+-- =========================================================
+-- GUI BUILD / សាងសង់ GUI
+-- =========================================================
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "NhazX"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = PlayerGui
+
+-- Main Frame / ផ្ទាំងមេ
+local Main = Instance.new("Frame")
+Main.Name = "Main"
+Main.Size = UDim2.new(0, 240, 0, 300)
+Main.Position = UDim2.new(0, 30, 0, 150)
+Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+Main.BorderSizePixel = 0
+Main.Active = true
+Main.Draggable = true
+Main.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 10)
+UICorner.Parent = Main
+
+local Stroke = Instance.new("UIStroke")
+Stroke.Color = Color3.fromRGB(255, 60, 60)
+Stroke.Thickness = 2
+Stroke.Parent = Main
+
+-- Title / ចំណងជើង
+local Title = Instance.new("TextLabel")
+Title.Size = UDim2.new(1, 0, 0, 35)
+Title.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+Title.BorderSizePixel = 0
+Title.Text = "NhazX"
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.Parent = Main
+local TitleCorner = Instance.new("UICorner")
+TitleCorner.CornerRadius = UDim.new(0, 10)
+TitleCorner.Parent = Title
+
+-- Credit / ក្រេឌីត
+local Credit = Instance.new("TextLabel")
+Credit.Size = UDim2.new(1, 0, 0, 18)
+Credit.Position = UDim2.new(0, 0, 0, 36)
+Credit.BackgroundTransparency = 1
+Credit.Text = "script by @nhaz_samurai"
+Credit.TextColor3 = Color3.fromRGB(180, 180, 180)
+Credit.Font = Enum.Font.Gotham
+Credit.TextSize = 11
+Credit.Parent = Main
+
+-- ScrollFrame / ផ្ទាំងរមូរ
+local Scroll = Instance.new("ScrollingFrame")
+Scroll.Size = UDim2.new(1, -20, 1, -90)
+Scroll.Position = UDim2.new(0, 10, 0, 60)
+Scroll.BackgroundTransparency = 1
+Scroll.BorderSizePixel = 0
+Scroll.ScrollBarThickness = 4
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 240)
+Scroll.Parent = Main
+
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0, 6)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+UIListLayout.Parent = Scroll
+
+-- Function to create toggle button / មុខងារបង្កើតប៊ូតុងបើក-បិទ
+local function createToggle(name, order, default, callback)
+    local Btn = Instance.new("TextButton")
+    Btn.Name = name
+    Btn.Size = UDim2.new(1, -8, 0, 34)
+    Btn.BackgroundColor3 = default and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(45, 45, 50)
+    Btn.BorderSizePixel = 0
+    Btn.Text = name .. ": " .. (default and "ON" or "OFF")
+    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    Btn.Font = Enum.Font.GothamMedium
+    Btn.TextSize = 13
+    Btn.LayoutOrder = order
+    Btn.Parent = Scroll
+
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 6)
+    c.Parent = Btn
+
+    local state = default
+    Btn.MouseButton1Click:Connect(function()
+        state = not state
+        Btn.Text = name .. ": " .. (state and "ON" or "OFF")
+        TweenService:Create(Btn, TweenInfo.new(0.15), {
+            BackgroundColor3 = state and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(45, 45, 50)
+        }):Play()
+        callback(state)
+    end)
+    return Btn
+end
+
+-- Toggles / ប៊ូតុងបើក-បិទ
+createToggle("Auto Steal", 1, CONFIG.AutoSteal, function(v) CONFIG.AutoSteal = v end)
+createToggle("Anti Kick", 2, CONFIG.AntiKick, function(v) CONFIG.AntiKick = v end)
+createToggle("Anti Log", 3, CONFIG.AntiLog, function(v) CONFIG.AntiLog = v end)
+
+-- Range slider label / ស្លាយជួរ
+local RangeLabel = Instance.new("TextLabel")
+RangeLabel.Size = UDim2.new(1, -8, 0, 24)
+RangeLabel.BackgroundTransparency = 1
+RangeLabel.Text = "Range: " .. CONFIG.StealRange
+RangeLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
+RangeLabel.Font = Enum.Font.Gotham
+RangeLabel.TextSize = 12
+RangeLabel.LayoutOrder = 4
+RangeLabel.Parent = Scroll
+
+local Slider = Instance.new("TextButton")
+Slider.Size = UDim2.new(1, -8, 0, 20)
+Slider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
+Slider.BorderSizePixel = 0
+Slider.Text = ""
+Slider.LayoutOrder = 5
+Slider.Parent = Scroll
+local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 4); sc.Parent = Slider
+
+local Fill = Instance.new("Frame")
+Fill.Size = UDim2.new(0.3, 0, 1, 0)
+Fill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
+Fill.BorderSizePixel = 0
+Fill.Parent = Slider
+local fc = Instance.new("UICorner"); fc.CornerRadius = UDim.new(0, 4); fc.Parent = Fill
+
+local dragging = false
+Slider.InputBegan:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+    end
+end)
+UserInputService.InputEnded:Connect(function(i)
+    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+UserInputService.InputChanged:Connect(function(i)
+    if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
+        local rel = math.clamp((i.Position.X - Slider.AbsolutePosition.X) / Slider.AbsoluteSize.X, 0, 1)
+        Fill.Size = UDim2.new(rel, 0, 1, 0)
+        CONFIG.StealRange = math.floor(rel * 50) + 1
+        RangeLabel.Text = "Range: " .. CONFIG.StealRange
+    end
+end)
+
+-- =========================================================
+-- INIT / ចាប់ផ្តើម
+-- =========================================================
+if CONFIG.AntiKick then enableAntiKick() end
+if CONFIG.AntiLog then enableAntiLog() end
+enableOwnerBypass()
+
+task.spawn(function()
+    while task.wait(CONFIG.LoopDelay) do
+        if CONFIG.AutoSteal then
+            local egg = getNearestEgg()
+            if egg then claimEgg(egg) end
+        end
+    end
+end)
+
+game:GetService("StarterGui"):SetCore("SendNotification", {
+    Title = "NhazX",
+    Text = "Loaded | script by @nhaz_samurai",
+    Duration = 5
+})
