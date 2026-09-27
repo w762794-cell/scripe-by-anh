@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v51 FINAL
--- ពិនិត្យតែ NPC ដែលកំពុងដេញយើង (មិនស្កេនទាំងអស់)
--- ល្បឿនលឿន + teleport ពេលដេញ
+-- palofsc: NhazX Steal An Egg - v53 FINAL
+-- កំណត់ឈ្មោះសត្វពិនិត្យ (Guardian) ជាក់លាក់
+-- Range: unlimited + Teleport ពេលដេញ
 
-print("[NhazX v51] Loading...")
+print("[NhazX v53] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -18,12 +18,37 @@ local on = false
 local godmode = true
 local home = H.CFrame
 local lastTp = 0
-local cooldown = 3.0
+local cooldown = 2.0
 local tpCount = 0
 local lastChaseTime = 0
 local lastScan = 0
-local scanDelay = 1.0
+local scanDelay = 0.5
 local nearbyNPCs = {}
+local unlimited = true
+
+-- ឈ្មោះ Guardian ទាំងអស់
+local GUARDIANS = {
+    ["Chicken"] = true,
+    ["Swan"] = true,
+    ["Scorpion"] = true,
+    ["Tiger"] = true,
+    ["Yeti"] = true,
+    ["Cerberus"] = true,
+    ["Hellhound"] = true,
+    ["Beluga Whale"] = true,
+    ["Moby"] = true,
+    ["T-Rex"] = true,
+    ["Tyrannosaurus"] = true,
+    ["Cosmic Skeleton"] = true,
+    ["Cosmic Skeleton Boss"] = true,
+    ["Dragon"] = true,
+    ["Oni Tiger"] = true,
+    ["Nine-tailed fox"] = true,
+    ["King Gorilla"] = true,
+    ["Angel"] = true,
+    ["Demon"] = true,
+    ["Guardian"] = true,
+}
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -79,7 +104,7 @@ local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
 local gB = mkBtn("Godmode: ON", 46, Color3.fromRGB(0, 130, 0))
 local hB = mkBtn("Set Home (here)", 82, Color3.fromRGB(0, 100, 180))
-local rdB = mkBtn("Range: 100", 118, Color3.fromRGB(80, 40, 100))
+local rdB = mkBtn("Range: unlimited", 118, Color3.fromRGB(0, 100, 180))
 local stB = mkBtn("Status: OFF", 154, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
 
@@ -143,46 +168,50 @@ local function applyGodmode()
 end
 
 -- ============================================================
--- ស្កេន NPC ជិតៗ តែម្ដងម្កាល (មិនរាល់ frame)
+-- ពិនិត្យថាជា Guardian ឬអត់
 -- ============================================================
-local chaseRange = 100
+local function isGuardian(name)
+    -- ពិនិត្យឈ្មោះជាក់លាក់
+    if GUARDIANS[name] then return true end
+    
+    -- ពិនិត្យឈ្មោះដែលមានពាក្យទាំងនេះ
+    local lower = string.lower(name)
+    local keywords = {"guardian", "chicken", "swan", "scorpion", "tiger", "yeti", 
+                     "cerberus", "hellhound", "beluga", "moby", "trex", "t-rex",
+                     "tyranno", "cosmic", "dragon", "oni", "fox", "gorilla",
+                     "angel", "demon", "boss", "guard"}
+    
+    for _, kw in pairs(keywords) do
+        if string.find(lower, kw) then return true end
+    end
+    
+    return false
+end
 
-local function scanNearbyNPCs()
+-- ============================================================
+-- ស្កេន Guardian
+-- ============================================================
+local function scanGuardians()
     nearbyNPCs = {}
     if not H or not H.Parent then return end
-    
-    -- ស្កេនតែ workspace ជាន់ទី 1 និង Models ធំៗ
+
     pcall(function()
-        for _, container in pairs(workspace:GetChildren()) do
-            -- ពិនិត្យ Model ជាន់ទី 1
-            local function checkModel(o)
-                if o:IsA("Model") and o ~= Ch then
+        for _, o in pairs(workspace:GetDescendants()) do
+            if o:IsA("Model") and o ~= Ch then
+                -- ពិនិត្យថាជា Guardian
+                if isGuardian(o.Name) then
                     local hum = o:FindFirstChildOfClass("Humanoid")
                     local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
                     
                     if hum and root and hum.Health > 0 then
-                        -- មិនមែន player
-                        local isPl = false
-                        for _, pl in pairs(P:GetPlayers()) do
-                            if pl.Character == o then isPl = true break end
-                        end
-                        
-                        if not isPl then
-                            local dist = (root.Position - H.Position).Magnitude
-                            if dist < chaseRange then
-                                table.insert(nearbyNPCs, {model = o, dist = dist, hum = hum, root = root})
-                            end
-                        end
+                        local dist = (root.Position - H.Position).Magnitude
+                        table.insert(nearbyNPCs, {
+                            model = o,
+                            dist = dist,
+                            hum = hum,
+                            root = root
+                        })
                     end
-                end
-            end
-            
-            checkModel(container)
-            
-            -- ពិនិត្យ Folder ជាន់ទី 2 (តែ 1 ជាន់)
-            if container:IsA("Folder") or container:IsA("Model") then
-                for _, child in pairs(container:GetChildren()) do
-                    checkModel(child)
                 end
             end
         end
@@ -205,10 +234,9 @@ end
 -- LOOP
 -- ============================================================
 spawn(function()
-    while task.wait(0.2) do
+    while task.wait(0.15) do
         if not Ch or not Ch.Parent then continue end
 
-        -- Godmode
         if godmode then
             pcall(function()
                 local hum = Ch:FindFirstChildOfClass("Humanoid")
@@ -221,34 +249,43 @@ spawn(function()
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        -- ស្កេន NPC រាល់ 1 វិនាទី
+        -- ស្កេន Guardian រាល់ 0.5 វិនាទី
         local t = tick()
         if t - lastScan > scanDelay then
             lastScan = t
-            scanNearbyNPCs()
+            scanGuardians()
         end
 
-        -- ពិនិត្យ NPC កំពុងដេញពី list ដែលបានស្កេន
+        -- រក Guardian ដែលដេញយើង
         local chaser = nil
         local chaserDist = 0
         local closestDist = math.huge
 
         for _, npcData in pairs(nearbyNPCs) do
-            -- Update dist បើ NPC ផ្លាស់ទី
-            local currentDist = (npcData.root.Position - H.Position).Magnitude
-            npcData.dist = currentDist
-            
-            if currentDist < chaseRange then
+            if npcData.model and npcData.model.Parent and npcData.root and npcData.root.Parent then
+                local currentDist = (npcData.root.Position - H.Position).Magnitude
+                
                 -- ពិនិត្យថាដេញមករក
                 local vel = npcData.hum.MoveDirection
+                local isChasing = false
+                
                 if vel.Magnitude > 0.05 then
                     local toUs = (H.Position - npcData.root.Position).Unit
                     local dot = vel.Unit:Dot(toUs)
-                    if dot > 0.3 and currentDist < closestDist then
-                        closestDist = currentDist
-                        chaser = npcData.model
-                        chaserDist = currentDist
+                    if dot > 0.3 then
+                        isChasing = true
                     end
+                end
+                
+                -- បើ Guardian នៅជិត < 30 studs → ចាត់ទុកថាដេញ
+                if currentDist < 30 then
+                    isChasing = true
+                end
+                
+                if isChasing and currentDist < closestDist then
+                    closestDist = currentDist
+                    chaser = npcData.model
+                    chaserDist = currentDist
                 end
             end
         end
@@ -325,12 +362,16 @@ hB.MouseButton1Click:Connect(function()
 end)
 
 rdB.MouseButton1Click:Connect(function()
-    if chaseRange == 100 then chaseRange = 50
-    elseif chaseRange == 50 then chaseRange = 150
-    elseif chaseRange == 150 then chaseRange = 200
-    else chaseRange = 100 end
-    rdB.Text = "Range: " .. chaseRange
+    unlimited = not unlimited
+    if unlimited then
+        rdB.Text = "Range: unlimited"
+        rdB.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+    else
+        rdB.Text = "Range: 100"
+        rdB.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
+    end
 end)
 
 applyGodmode()
-print("[NhazX v51] Script By @nhaz_samurai")
+print("[NhazX v53] Script By @nhaz_samurai")
+print("Guardians: " .. #GUARDIANS)
