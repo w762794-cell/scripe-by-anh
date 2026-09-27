@@ -1,12 +1,13 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
 -- GUI: NhazX | Credit: script by @nhaz_samurai
--- Auto-claim + Anti-Kick + Anti-Log + Owner bypass
+-- Instant-claim: យកភ្លាម → ក្លាយជារបស់យើង ដោយមិនបាច់រត់មេដេញ
 -- Paste into executor (Delta, Fluxus, Solara, Synapse, etc.)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
@@ -14,11 +15,13 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 -- CONFIG / ការកំណត់
 -- =========================================================
 local CONFIG = {
-    AutoSteal   = true,
-    StealRange  = 12,
-    AntiKick    = true,
-    AntiLog     = true,
-    LoopDelay   = 0.05,
+    AutoSteal    = true,
+    InstantClaim = true,   -- កាន់កាប់ភ្លាម ដោយមិនបាច់ទៅដល់
+    TeleportOnSteal = false, -- បិទទូរទៅរករបស់ (បើ InstantClaim=true)
+    StealRange   = 500,    -- ចាប់របស់ក្នុងចម្ងាយឆ្ងាយ
+    AntiKick     = true,
+    AntiLog      = true,
+    LoopDelay    = 0.03,
 }
 
 -- =========================================================
@@ -65,37 +68,84 @@ local function enableOwnerBypass()
 end
 
 -- =========================================================
--- STEAL LOGIC / តក្កៈលួច
+-- REMOTE CACHE / ចាប់យក remote លួច
 -- =========================================================
-local function getNearestEgg()
-    local nearest, dist = nil, math.huge
+local StealRemotes = {}
+local function cacheRemotes()
+    for _, r in pairs(ReplicatedStorage:GetDescendants()) do
+        if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
+            local n = r.Name:lower()
+            if n:find("steal") or n:find("claim") or n:find("take") or n:find("grab") or n:find("pickup") then
+                table.insert(StealRemotes, r)
+            end
+        end
+    end
+end
+
+-- =========================================================
+-- FIND EGGS / រករបស់
+-- =========================================================
+local function getAllEggs()
+    local list = {}
     local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return list end
     local root = char.HumanoidRootPart
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") and (obj.Name:lower():find("egg") or obj.Name:lower():find("brainrot")) then
             local d = (obj.Position - root.Position).Magnitude
-            if d < dist and d <= CONFIG.StealRange then
-                nearest, dist = obj, d
+            if d <= CONFIG.StealRange then
+                table.insert(list, {part = obj, dist = d})
             end
         end
     end
-    return nearest
+    table.sort(list, function(a, b) return a.dist < b.dist end)
+    return list
 end
 
-local function claimEgg(egg)
-    if not egg then return end
+-- =========================================================
+-- INSTANT CLAIM / កាន់កាប់ភ្លាម
+-- =========================================================
+local function instantClaim(part)
+    if not part then return end
     local char = LocalPlayer.Character
     if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    char.HumanoidRootPart.CFrame = egg.CFrame + Vector3.new(0, 2, 0)
 
-    for _, r in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-        if r:IsA("RemoteEvent") and (r.Name:lower():find("steal") or r.Name:lower():find("claim") or r.Name:lower():find("take")) then
-            pcall(function() r:FireServer(egg) end)
-        end
+    -- ទូរទៅរករបស់បើបើក
+    if CONFIG.TeleportOnSteal then
+        char.HumanoidRootPart.CFrame = part.CFrame + Vector3.new(0, 2, 0)
     end
+
+    -- ហៅ remote លួចទាំងអស់ (បង្ខំ claim)
+    for _, r in pairs(StealRemotes) do
+        pcall(function()
+            if r:IsA("RemoteEvent") then
+                r:FireServer(part)
+            else
+                r:InvokeServer(part)
+            end
+        end)
+    end
+
+    -- បង្ខំប្តូរម្ចាស់ក្នុងម៉ាស៊ីន
     pcall(function()
-        egg.Parent = LocalPlayer:FindFirstChild("Backpack") or char
+        local owner = part:FindFirstChild("Owner") or part:FindFirstChild("OwnerId") or part:FindFirstChild("Creator")
+        if owner then
+            if owner:IsA("ObjectValue") then
+                owner.Value = LocalPlayer
+            elseif owner:IsA("IntValue") or owner:IsA("NumberValue") then
+                owner.Value = LocalPlayer.UserId
+            elseif owner:IsA("StringValue") then
+                owner.Value = LocalPlayer.Name
+            end
+        end
+        part:SetAttribute("Owner", LocalPlayer.UserId)
+        part:SetAttribute("OwnerId", LocalPlayer.UserId)
+        part:SetAttribute("Claimed", true)
+    end)
+
+    -- ផ្លាស់ parent ទៅ backpack/character
+    pcall(function()
+        part.Parent = LocalPlayer:FindFirstChild("Backpack") or char
     end)
 end
 
@@ -107,10 +157,8 @@ ScreenGui.Name = "NhazX"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.Parent = PlayerGui
 
--- Main Frame / ផ្ទាំងមេ
 local Main = Instance.new("Frame")
-Main.Name = "Main"
-Main.Size = UDim2.new(0, 240, 0, 300)
+Main.Size = UDim2.new(0, 240, 0, 330)
 Main.Position = UDim2.new(0, 30, 0, 150)
 Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 Main.BorderSizePixel = 0
@@ -127,7 +175,6 @@ Stroke.Color = Color3.fromRGB(255, 60, 60)
 Stroke.Thickness = 2
 Stroke.Parent = Main
 
--- Title / ចំណងជើង
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
@@ -141,7 +188,6 @@ local TitleCorner = Instance.new("UICorner")
 TitleCorner.CornerRadius = UDim.new(0, 10)
 TitleCorner.Parent = Title
 
--- Credit / ក្រេឌីត
 local Credit = Instance.new("TextLabel")
 Credit.Size = UDim2.new(1, 0, 0, 18)
 Credit.Position = UDim2.new(0, 0, 0, 36)
@@ -152,14 +198,13 @@ Credit.Font = Enum.Font.Gotham
 Credit.TextSize = 11
 Credit.Parent = Main
 
--- ScrollFrame / ផ្ទាំងរមូរ
 local Scroll = Instance.new("ScrollingFrame")
 Scroll.Size = UDim2.new(1, -20, 1, -90)
 Scroll.Position = UDim2.new(0, 10, 0, 60)
 Scroll.BackgroundTransparency = 1
 Scroll.BorderSizePixel = 0
 Scroll.ScrollBarThickness = 4
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 240)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 280)
 Scroll.Parent = Main
 
 local UIListLayout = Instance.new("UIListLayout")
@@ -167,10 +212,8 @@ UIListLayout.Padding = UDim.new(0, 6)
 UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Parent = Scroll
 
--- Function to create toggle button / មុខងារបង្កើតប៊ូតុងបើក-បិទ
 local function createToggle(name, order, default, callback)
     local Btn = Instance.new("TextButton")
-    Btn.Name = name
     Btn.Size = UDim2.new(1, -8, 0, 34)
     Btn.BackgroundColor3 = default and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(45, 45, 50)
     Btn.BorderSizePixel = 0
@@ -180,10 +223,7 @@ local function createToggle(name, order, default, callback)
     Btn.TextSize = 13
     Btn.LayoutOrder = order
     Btn.Parent = Scroll
-
-    local c = Instance.new("UICorner")
-    c.CornerRadius = UDim.new(0, 6)
-    c.Parent = Btn
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = Btn
 
     local state = default
     Btn.MouseButton1Click:Connect(function()
@@ -194,15 +234,14 @@ local function createToggle(name, order, default, callback)
         }):Play()
         callback(state)
     end)
-    return Btn
 end
 
--- Toggles / ប៊ូតុងបើក-បិទ
 createToggle("Auto Steal", 1, CONFIG.AutoSteal, function(v) CONFIG.AutoSteal = v end)
-createToggle("Anti Kick", 2, CONFIG.AntiKick, function(v) CONFIG.AntiKick = v end)
-createToggle("Anti Log", 3, CONFIG.AntiLog, function(v) CONFIG.AntiLog = v end)
+createToggle("Instant Claim", 2, CONFIG.InstantClaim, function(v) CONFIG.InstantClaim = v end)
+createToggle("Teleport On Steal", 3, CONFIG.TeleportOnSteal, function(v) CONFIG.TeleportOnSteal = v end)
+createToggle("Anti Kick", 4, CONFIG.AntiKick, function(v) CONFIG.AntiKick = v end)
+createToggle("Anti Log", 5, CONFIG.AntiLog, function(v) CONFIG.AntiLog = v end)
 
--- Range slider label / ស្លាយជួរ
 local RangeLabel = Instance.new("TextLabel")
 RangeLabel.Size = UDim2.new(1, -8, 0, 24)
 RangeLabel.BackgroundTransparency = 1
@@ -210,7 +249,7 @@ RangeLabel.Text = "Range: " .. CONFIG.StealRange
 RangeLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
 RangeLabel.Font = Enum.Font.Gotham
 RangeLabel.TextSize = 12
-RangeLabel.LayoutOrder = 4
+RangeLabel.LayoutOrder = 6
 RangeLabel.Parent = Scroll
 
 local Slider = Instance.new("TextButton")
@@ -218,12 +257,12 @@ Slider.Size = UDim2.new(1, -8, 0, 20)
 Slider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
 Slider.BorderSizePixel = 0
 Slider.Text = ""
-Slider.LayoutOrder = 5
+Slider.LayoutOrder = 7
 Slider.Parent = Scroll
 local sc = Instance.new("UICorner"); sc.CornerRadius = UDim.new(0, 4); sc.Parent = Slider
 
 local Fill = Instance.new("Frame")
-Fill.Size = UDim2.new(0.3, 0, 1, 0)
+Fill.Size = UDim2.new(0.9, 0, 1, 0)
 Fill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
 Fill.BorderSizePixel = 0
 Fill.Parent = Slider
@@ -244,7 +283,7 @@ UserInputService.InputChanged:Connect(function(i)
     if dragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
         local rel = math.clamp((i.Position.X - Slider.AbsolutePosition.X) / Slider.AbsoluteSize.X, 0, 1)
         Fill.Size = UDim2.new(rel, 0, 1, 0)
-        CONFIG.StealRange = math.floor(rel * 50) + 1
+        CONFIG.StealRange = math.floor(rel * 1000) + 10
         RangeLabel.Text = "Range: " .. CONFIG.StealRange
     end
 end)
@@ -255,18 +294,32 @@ end)
 if CONFIG.AntiKick then enableAntiKick() end
 if CONFIG.AntiLog then enableAntiLog() end
 enableOwnerBypass()
+cacheRemotes()
 
+-- Refresh remotes រៀងរាល់ 5 វិនាទី
+task.spawn(function()
+    while task.wait(5) do
+        StealRemotes = {}
+        cacheRemotes()
+    end
+end)
+
+-- Main loop / រង្វិលចម្បង
 task.spawn(function()
     while task.wait(CONFIG.LoopDelay) do
         if CONFIG.AutoSteal then
-            local egg = getNearestEgg()
-            if egg then claimEgg(egg) end
+            local eggs = getAllEggs()
+            for _, e in ipairs(eggs) do
+                if CONFIG.InstantClaim then
+                    instantClaim(e.part)
+                end
+            end
         end
     end
 end)
 
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "NhazX",
-    Text = "Loaded | script by @nhaz_samurai",
+    Text = "Instant-Claim ON | script by @nhaz_samurai",
     Duration = 5
 })
