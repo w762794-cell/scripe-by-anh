@@ -1,8 +1,8 @@
--- palofsc: NhazX FIX TELEPORT - v61
--- ជួសជុល teleport មិនឱ្យស្លាប់ + មិនបាត់ egg
--- ប្រើ CFrame ជាន់ៗ (stealth teleport)
+-- palofsc: NhazX FIX TELEPORT + ANTI-CHEAT BYPASS - v62
+-- Bypass anti-cheat ខ្លាំងសម្រាប់ Update 26-27.09.2026
+-- Teleport ជាន់ៗ + NetworkOwner + Hook Protection
 
-print("[NhazX v61] Loading...")
+print("[NhazX v62] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -17,11 +17,110 @@ local PG = LP:WaitForChild("PlayerGui")
 local home = H.CFrame
 local isTeleporting = false
 local lastTp = 0
-local cooldown = 2.0
+local cooldown = 2.5
+local originalSpeed = Hu.WalkSpeed
+local lastCFrame = H.CFrame
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
 if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
+
+-- ============================================================
+-- ANTI-CHEAT BYPASS (ខ្លាំង)
+-- ============================================================
+local bypassActive = false
+
+local function setupBypass()
+    local success = pcall(function()
+        local mt = getrawmetatable(game)
+        if not mt then return false end
+        
+        local oldIndex = mt.__index
+        local oldNewIndex = mt.__newindex
+        local oldNamecall = mt.__namecall
+        
+        setreadonly(mt, false)
+        
+        -- Hook __index - លាក់ CFrame ពិត
+        mt.__index = newcclosure(function(self, key)
+            if self == H and key == "CFrame" then
+                if isTeleporting then
+                    return lastCFrame
+                end
+            end
+            if self == Hu then
+                if key == "WalkSpeed" then
+                    return originalSpeed
+                end
+            end
+            return oldIndex(self, key)
+        end)
+        
+        -- Hook __newindex - ចាប់ការកែប្រែ
+        mt.__newindex = newcclosure(function(self, key, value)
+            if self == H and key == "CFrame" then
+                if not isTeleporting then
+                    lastCFrame = value
+                end
+                return oldNewIndex(self, key, value)
+            end
+            return oldNewIndex(self, key, value)
+        end)
+        
+        setreadonly(mt, true)
+        return true
+    end)
+    
+    if success then
+        bypassActive = true
+        print("[NhazX] Anti-cheat bypass ACTIVE")
+    else
+        print("[NhazX] Bypass FAILED - hook not available")
+    end
+end
+
+-- ព្យាយាមបើក bypass
+pcall(setupBypass)
+
+-- ============================================================
+-- NETWORK OWNER LOOP
+-- ============================================================
+spawn(function()
+    while task.wait(1) do
+        pcall(function()
+            if H and H.Parent then
+                if H:GetNetworkOwner() ~= LP then
+                    H:SetNetworkOwner(LP)
+                end
+            end
+        end)
+    end
+end)
+
+-- ============================================================
+-- GODMODE (ការពារស្លាប់)
+-- ============================================================
+spawn(function()
+    while task.wait(0.2) do
+        pcall(function()
+            if Ch and Ch.Parent then
+                local hum = Ch:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    if hum.Health < hum.MaxHealth then
+                        hum.Health = hum.MaxHealth
+                    end
+                end
+                -- ForceField
+                if not Ch:FindFirstChild("NhazXShield") then
+                    local ff = Instance.new("ForceField")
+                    ff.Name = "NhazXShield"
+                    ff.Visible = false
+                    ff.Parent = Ch
+                end
+            end
+        end)
+    end
+end)
 
 -- ============================================================
 -- GUI
@@ -58,7 +157,7 @@ local tpc = Instance.new("UICorner") tpc.CornerRadius = UDim.new(1,0) tpc.Parent
 local tps = Instance.new("UIStroke") tps.Color = Color3.fromRGB(0, 255, 150) tps.Thickness = 3 tps.Parent = tpBtn
 
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 180, 0, 150)
+f.Size = UDim2.new(0, 185, 0, 180)
 f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
@@ -69,7 +168,7 @@ local fs = Instance.new("UIStroke") fs.Color = Color3.fromRGB(0,255,200) fs.Thic
 
 local function mkBtn(txt, y, col)
     local x = Instance.new("TextButton")
-    x.Size = UDim2.new(0, 150, 0, 30)
+    x.Size = UDim2.new(0, 155, 0, 30)
     x.Position = UDim2.new(0, 15, 0, y)
     x.BackgroundColor3 = col or Color3.fromRGB(55,55,55)
     x.Text = txt
@@ -84,7 +183,8 @@ end
 
 local hB = mkBtn("Set Home (here)", 10, Color3.fromRGB(0, 100, 180))
 local tB = mkBtn("Teleport", 44, Color3.fromRGB(0, 180, 100))
-local stB = mkBtn("Ready", 78, Color3.fromRGB(40, 40, 40))
+local bB = mkBtn("Bypass: CHECKING", 78, Color3.fromRGB(80, 40, 100))
+local stB = mkBtn("Ready", 112, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
 
 local credit = Instance.new("TextLabel")
@@ -126,7 +226,7 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- STEALTH TELEPORT - ជាន់ៗ មិនស្លាប់
+-- STEALTH TELEPORT
 -- ============================================================
 local function stealthTP(targetCF)
     if not H or not H.Parent then return false end
@@ -142,38 +242,36 @@ local function stealthTP(targetCF)
     lastTp = now
     stB.Text = "Teleporting..."
 
-    -- 1. ទាញ NetworkOwner
+    -- NetworkOwner
     pcall(function()
         if H:GetNetworkOwner() ~= LP then
             H:SetNetworkOwner(LP)
         end
     end)
 
-    -- 2. រង់ចាំឱ្យ server ទទួលស្គាល់ egg
-    task.wait(0.15)
+    task.wait(0.1)
 
-    -- 3. Teleport ជាន់ៗ (Stealth)
+    -- Teleport ជាន់ៗ 10 steps
     local startPos = H.Position
     local targetPos = targetCF.Position
-    local steps = 8
+    local steps = 10
 
     for i = 1, steps do
         local pos = startPos:Lerp(targetPos, i / steps)
         pcall(function()
             H.CFrame = CFrame.new(pos)
         end)
-        task.wait(0.04)
+        task.wait(0.05)
     end
 
-    -- 4. Teleport ចុងក្រោយ
-    task.wait(0.1)
+    -- ចុងក្រោយ
+    task.wait(0.15)
     pcall(function()
         H.Velocity = Vector3.zero
         H.AssemblyLinearVelocity = Vector3.zero
         H.CFrame = targetCF
     end)
 
-    -- 5. ធានាថាដល់
     task.wait(0.2)
     pcall(function()
         H.CFrame = targetCF
@@ -211,6 +309,22 @@ tB.MouseButton1Click:Connect(function()
     end
 end)
 
+bB.MouseButton1Click:Connect(function()
+    if bypassActive then
+        bB.Text = "Bypass: ACTIVE"
+        bB.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
+    else
+        bB.Text = "Bypass: FAILED"
+        bB.BackgroundColor3 = Color3.fromRGB(130, 0, 0)
+    end
+    task.wait(2)
+    if bypassActive then
+        bB.Text = "Bypass: ACTIVE"
+    else
+        bB.Text = "Bypass: CHECKING"
+    end
+end)
+
 hB.MouseButton1Click:Connect(function()
     home = H.CFrame
     stB.Text = "Home: " .. math.floor(home.Position.X) .. "," .. math.floor(home.Position.Z)
@@ -225,7 +339,19 @@ LP.CharacterAdded:Connect(function(c)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
+    originalSpeed = Hu.WalkSpeed
+    lastCFrame = H.CFrame
     isTeleporting = false
 end)
 
-print("[NhazX v61] Ready - Stealth Teleport")
+-- Update bypass status
+task.wait(1)
+if bypassActive then
+    bB.Text = "Bypass: ACTIVE"
+    bB.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
+else
+    bB.Text = "Bypass: FAILED"
+    bB.BackgroundColor3 = Color3.fromRGB(130, 0, 0)
+end
+
+print("[NhazX v62] Ready | Bypass: " .. tostring(bypassActive))
