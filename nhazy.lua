@@ -1,26 +1,20 @@
--- palofsc: NhazX Egg Steal - v14 STABLE
--- ដំណើរការបានប្រាកដ (បង្កើតពី minimal test ដែល work)
--- GUI: NhazX | Auto Steal | Auto Return SafeZone | Camera ធម្មតា
+-- palofsc: NhazX UNIVERSAL Egg Steal - v16 FINAL
+-- ដំណើរការគ្រប់ game ដែលមាន egg steal
+-- Auto detect: Eggs + Remotes + SafeZone + Tools
+-- GUI: NhazX
 
-print("[NhazX] Loading...")
+print("[NhazX v16] Loading universal version...")
 
--- ============================================================
--- SERVICES
--- ============================================================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local LP = Players.LocalPlayer
-
-local Char = LP.Character
-if not Char then Char = LP.CharacterAdded:Wait() end
+local Char = LP.Character or LP.CharacterAdded:Wait()
 local HRP = Char:WaitForChild("HumanoidRootPart", 10)
 local Hum = Char:WaitForChild("Humanoid", 10)
 local PG = LP:WaitForChild("PlayerGui", 10)
-
-print("[NhazX] Character ready")
 
 -- ============================================================
 -- CONFIG
@@ -28,15 +22,18 @@ print("[NhazX] Character ready")
 local isRunning = false
 local autoSteal = false
 local autoReturn = true
-local speed = 60
-local speeds = {60, 100, 200, 500, 1000, 2000, 5000}
-local sIdx = 1
+local speed = 500
+local speeds = {100, 200, 500, 1000, 2000, 5000, 10000}
+local sIdx = 3
 local originalSpeed = Hum.WalkSpeed
 local lastSteal = 0
-local stealDelay = 0.5
+local stealDelay = 0.4
 local safeZoneCFrame = nil
 local returnDelay = 0.15
 local stealRemotes = {}
+local allRemotes = {}
+local eggList = {}
+local stealTools = {}
 
 -- ============================================================
 -- GUI NhazX
@@ -61,37 +58,23 @@ btn.Font = Enum.Font.GothamBold
 btn.BorderSizePixel = 0
 btn.Draggable = true
 btn.Parent = gui
-
-local bc = Instance.new("UICorner")
-bc.CornerRadius = UDim.new(1, 0)
-bc.Parent = btn
-
-local bs = Instance.new("UIStroke")
-bs.Color = Color3.fromRGB(0, 255, 200)
-bs.Thickness = 2
-bs.Parent = btn
+local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = btn
+local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = btn
 
 -- Panel
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 190, 0, 310)
-panel.Position = UDim2.new(0, 85, 0, 200)
+panel.Size = UDim2.new(0, 200, 0, 420)
+panel.Position = UDim2.new(0, 85, 0, 80)
 panel.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 panel.BorderSizePixel = 0
 panel.Visible = false
 panel.Parent = gui
-
-local pc = Instance.new("UICorner")
-pc.CornerRadius = UDim.new(0, 14)
-pc.Parent = panel
-
-local ps = Instance.new("UIStroke")
-ps.Color = Color3.fromRGB(0, 255, 200)
-ps.Thickness = 1.5
-ps.Parent = panel
+local pc = Instance.new("UICorner") pc.CornerRadius = UDim.new(0,14) pc.Parent = panel
+local ps = Instance.new("UIStroke") ps.Color = Color3.fromRGB(0,255,200) ps.Thickness = 1.5 ps.Parent = panel
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 30)
-title.Position = UDim2.new(0, 0, 0, 5)
+title.Size = UDim2.new(1, 0, 0, 28)
+title.Position = UDim2.new(0, 0, 0, 4)
 title.BackgroundTransparency = 1
 title.Text = "NhazX"
 title.TextColor3 = Color3.fromRGB(0, 255, 200)
@@ -99,155 +82,87 @@ title.Font = Enum.Font.GothamBold
 title.TextSize = 20
 title.Parent = panel
 
-local onBtn = Instance.new("TextButton")
-onBtn.Size = UDim2.new(0, 160, 0, 36)
-onBtn.Position = UDim2.new(0, 15, 0, 40)
-onBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-onBtn.Text = "OFF"
-onBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+local function mkBtn(txt, y, col)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(0, 170, 0, 28)
+    b.Position = UDim2.new(0, 15, 0, y)
+    b.BackgroundColor3 = col or Color3.fromRGB(55,55,55)
+    b.Text = txt
+    b.TextColor3 = Color3.fromRGB(255,255,255)
+    b.Font = Enum.Font.Gotham
+    b.TextSize = 12
+    b.BorderSizePixel = 0
+    b.Parent = panel
+    local c = Instance.new("UICorner") c.CornerRadius = UDim.new(0,8) c.Parent = b
+    return b
+end
+
+local onBtn = mkBtn("OFF", 36)
 onBtn.Font = Enum.Font.GothamBold
-onBtn.TextSize = 16
-onBtn.BorderSizePixel = 0
-onBtn.Parent = panel
+onBtn.TextSize = 15
+local spdBtn = mkBtn("Speed: 500", 70)
+local autoBtn = mkBtn("Auto Steal: OFF", 102)
+local retBtn = mkBtn("Auto Return: ON", 134, Color3.fromRGB(0,130,0))
+local setBtn = mkBtn("Set SafeZone (here)", 166)
+local detectBtn = mkBtn("Auto Detect SafeZone", 198)
+local scanBtn = mkBtn("Rescan All", 230, Color3.fromRGB(100,50,100))
+local toolBtn = mkBtn("Use Steal Tool", 262, Color3.fromRGB(80,80,20))
 
-local oc = Instance.new("UICorner")
-oc.CornerRadius = UDim.new(0, 9)
-oc.Parent = onBtn
-
-local spdBtn = Instance.new("TextButton")
-spdBtn.Size = UDim2.new(0, 160, 0, 28)
-spdBtn.Position = UDim2.new(0, 15, 0, 84)
-spdBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-spdBtn.Text = "Speed: 60"
-spdBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-spdBtn.Font = Enum.Font.Gotham
-spdBtn.TextSize = 12
-spdBtn.BorderSizePixel = 0
-spdBtn.Parent = panel
-
-local sc = Instance.new("UICorner")
-sc.CornerRadius = UDim.new(0, 9)
-sc.Parent = spdBtn
-
-local autoBtn = Instance.new("TextButton")
-autoBtn.Size = UDim2.new(0, 160, 0, 28)
-autoBtn.Position = UDim2.new(0, 15, 0, 118)
-autoBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-autoBtn.Text = "Auto Steal: OFF"
-autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-autoBtn.Font = Enum.Font.Gotham
-autoBtn.TextSize = 12
-autoBtn.BorderSizePixel = 0
-autoBtn.Parent = panel
-
-local ac = Instance.new("UICorner")
-ac.CornerRadius = UDim.new(0, 9)
-ac.Parent = autoBtn
-
-local retBtn = Instance.new("TextButton")
-retBtn.Size = UDim2.new(0, 160, 0, 28)
-retBtn.Position = UDim2.new(0, 15, 0, 152)
-retBtn.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
-retBtn.Text = "Auto Return: ON"
-retBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-retBtn.Font = Enum.Font.Gotham
-retBtn.TextSize = 12
-retBtn.BorderSizePixel = 0
-retBtn.Parent = panel
-
-local rc = Instance.new("UICorner")
-rc.CornerRadius = UDim.new(0, 9)
-rc.Parent = retBtn
-
-local setBtn = Instance.new("TextButton")
-setBtn.Size = UDim2.new(0, 160, 0, 28)
-setBtn.Position = UDim2.new(0, 15, 0, 186)
-setBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-setBtn.Text = "Set SafeZone (here)"
-setBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-setBtn.Font = Enum.Font.Gotham
-setBtn.TextSize = 12
-setBtn.BorderSizePixel = 0
-setBtn.Parent = panel
-
-local setc = Instance.new("UICorner")
-setc.CornerRadius = UDim.new(0, 9)
-setc.Parent = setBtn
-
-local detectBtn = Instance.new("TextButton")
-detectBtn.Size = UDim2.new(0, 160, 0, 28)
-detectBtn.Position = UDim2.new(0, 15, 0, 220)
-detectBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-detectBtn.Text = "Auto Detect SafeZone"
-detectBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-detectBtn.Font = Enum.Font.Gotham
-detectBtn.TextSize = 12
-detectBtn.BorderSizePixel = 0
-detectBtn.Parent = panel
-
-local dc = Instance.new("UICorner")
-dc.CornerRadius = UDim.new(0, 9)
-dc.Parent = detectBtn
-
-local status = Instance.new("TextLabel")
-status.Size = UDim2.new(0, 160, 0, 30)
-status.Position = UDim2.new(0, 15, 0, 254)
-status.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-status.Text = "NhazX Ready"
-status.TextColor3 = Color3.fromRGB(0, 255, 200)
-status.Font = Enum.Font.Gotham
-status.TextSize = 11
-status.BorderSizePixel = 0
-status.Parent = panel
-
-local stc = Instance.new("UICorner")
-stc.CornerRadius = UDim.new(0, 8)
-stc.Parent = status
+local infoLabel = Instance.new("TextLabel")
+infoLabel.Size = UDim2.new(0, 170, 0, 120)
+infoLabel.Position = UDim2.new(0, 15, 0, 296)
+infoLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+infoLabel.Text = "Scanning..."
+infoLabel.TextColor3 = Color3.fromRGB(180, 255, 180)
+infoLabel.Font = Enum.Font.Code
+infoLabel.TextSize = 10
+infoLabel.TextXAlignment = Enum.TextXAlignment.Left
+infoLabel.TextYAlignment = Enum.TextYAlignment.Top
+infoLabel.TextWrapped = true
+infoLabel.BorderSizePixel = 0
+infoLabel.Parent = panel
+local ilc = Instance.new("UICorner") ilc.CornerRadius = UDim.new(0,8) ilc.Parent = infoLabel
 
 -- ============================================================
--- AUTO DETECT SAFEZONE
+-- UNIVERSAL EGG SCAN
 -- ============================================================
-local function autoDetectSafeZone()
-    local keywords = {"safezone", "safe_zone", "safearea", "spawn", "lobby", "base", "home", "sell", "shop"}
-    local found = nil
+local function scanEggs()
+    eggList = {}
+    local patterns = {"egg", "pet", "collectible", "prize", "reward", "token", "coin", "gem", "crystal", "orb"}
+    
     pcall(function()
         for _, o in pairs(workspace:GetDescendants()) do
-            if o:IsA("BasePart") or o:IsA("Model") or o:IsA("SpawnLocation") then
-                local n = string.lower(o.Name)
-                for _, k in pairs(keywords) do
-                    if string.find(n, k) then
-                        local part
-                        if o:IsA("BasePart") then part = o
-                        elseif o:IsA("Model") then part = o:FindFirstChildWhichIsA("BasePart")
-                        else part = o end
-                        if part then
-                            found = part.CFrame + Vector3.new(0, 3, 0)
-                            return
-                        end
+            local name = string.lower(o.Name)
+            for _, pat in pairs(patterns) do
+                if string.find(name, pat) then
+                    if o:IsA("BasePart") then
+                        table.insert(eggList, o)
+                    elseif o:IsA("Model") then
+                        local p = o:FindFirstChildWhichIsA("BasePart")
+                        if p then table.insert(eggList, p) end
                     end
+                    break
                 end
             end
         end
     end)
-    if not found then
-        pcall(function()
-            local sp = workspace:FindFirstChildOfClass("SpawnLocation")
-            if sp then found = sp.CFrame + Vector3.new(0, 3, 0) end
-        end)
-    end
-    return found
+    
+    return #eggList
 end
 
 -- ============================================================
--- REMOTE SCAN
+-- UNIVERSAL REMOTE SCAN
 -- ============================================================
 local function scanRemotes()
     stealRemotes = {}
-    local keywords = {"collect", "steal", "grab", "pickup", "claim", "take", "get", "egg", "pet"}
+    allRemotes = {}
+    local keywords = {"collect","steal","grab","pickup","claim","take","get","egg","pet","hatch","spawn","buy","purchase","redeem","obtain","reward"}
+    
     local function check(container)
         pcall(function()
             for _, r in pairs(container:GetDescendants()) do
                 if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
+                    table.insert(allRemotes, r)
                     local n = string.lower(r.Name)
                     for _, k in pairs(keywords) do
                         if string.find(n, k) then
@@ -259,46 +174,83 @@ local function scanRemotes()
             end
         end)
     end
+    
     check(ReplicatedStorage)
     check(workspace)
-    status.Text = "NhazX | R:" .. #stealRemotes
+    pcall(function() check(game:GetService("ServerStorage")) end)
+    
+    return #stealRemotes
 end
 
 -- ============================================================
--- FIND EGGS
+-- SCAN TOOLS
 -- ============================================================
-local function findEggs()
-    local eggs = {}
+local function scanTools()
+    stealTools = {}
     pcall(function()
-        for _, o in pairs(workspace:GetDescendants()) do
-            if o:IsA("BasePart") then
-                if string.find(string.lower(o.Name), "egg") then
-                    table.insert(eggs, o)
-                end
-            elseif o:IsA("Model") then
-                if string.find(string.lower(o.Name), "egg") then
-                    local p = o:FindFirstChildWhichIsA("BasePart")
-                    if p then table.insert(eggs, p) end
+        local containers = {}
+        local bp = LP:FindFirstChild("Backpack")
+        if bp then table.insert(containers, bp) end
+        if Char then table.insert(containers, Char) end
+        
+        for _, cont in pairs(containers) do
+            for _, t in pairs(cont:GetChildren()) do
+                if t:IsA("Tool") then
+                    table.insert(stealTools, t)
                 end
             end
         end
     end)
-    return eggs
+    return #stealTools
 end
 
 -- ============================================================
--- STEAL
+-- SAFEZONE DETECT
 -- ============================================================
-local function steal(part)
+local function autoDetectSafeZone()
+    local kws = {"safezone","safe_zone","safearea","safe_area","lobby","base","home","sell","shop","hub","spawn"}
+    local found = nil
+    pcall(function()
+        for _, o in pairs(workspace:GetDescendants()) do
+            local n = string.lower(o.Name)
+            for _, k in pairs(kws) do
+                if string.find(n, k) then
+                    local part
+                    if o:IsA("BasePart") then part = o
+                    elseif o:IsA("Model") then part = o:FindFirstChildWhichIsA("BasePart")
+                    elseif o:IsA("SpawnLocation") then part = o
+                    end
+                    if part then
+                        found = part.CFrame + Vector3.new(0, 5, 0)
+                        return
+                    end
+                end
+            end
+        end
+    end)
+    if not found then
+        pcall(function()
+            local sp = workspace:FindFirstChildOfClass("SpawnLocation")
+            if sp then found = sp.CFrame + Vector3.new(0, 5, 0) end
+        end)
+    end
+    return found
+end
+
+-- ============================================================
+-- STEAL FUNCTION
+-- ============================================================
+local function stealOne(part)
     if not part or not part.Parent then return end
     if not HRP or not HRP.Parent then return end
 
+    -- Teleport ទៅជិត egg
     pcall(function()
-        HRP.CFrame = part.CFrame + Vector3.new(0, 1, 0)
+        HRP.CFrame = part.CFrame + Vector3.new(0, 3, 0)
     end)
+    task.wait(0.06)
 
-    task.wait(0.05)
-
+    -- វិធី 1: ProximityPrompt + ClickDetector
     for _, c in pairs(part:GetChildren()) do
         if c:IsA("ProximityPrompt") then
             pcall(function() fireproximityprompt(c, 0) end)
@@ -307,45 +259,48 @@ local function steal(part)
         end
     end
 
+    -- វិធី 2: Touch
     pcall(function()
         firetouchinterest(HRP, part, 0)
         task.wait(0.01)
         firetouchinterest(HRP, part, 1)
     end)
 
+    -- វិធី 3: Remote events (ច្រើនបែប)
     for _, r in pairs(stealRemotes) do
         pcall(function()
             if r:IsA("RemoteEvent") then
                 r:FireServer(part)
                 r:FireServer(part.Name)
                 r:FireServer(part.Parent)
+                r:FireServer(part.Position)
+            elseif r:IsA("RemoteFunction") then
+                r:InvokeServer(part)
             end
         end)
     end
 
+    -- វិធី 4: Tools
     pcall(function()
         local bp = LP:FindFirstChild("Backpack")
-        if bp then
+        local chr = LP.Character
+        if bp and chr then
             for _, t in pairs(bp:GetChildren()) do
                 if t:IsA("Tool") then
-                    local n = string.lower(t.Name)
-                    if string.find(n, "steal") or string.find(n, "grab") or string.find(n, "net") then
-                        t.Parent = Char
-                        task.wait(0.05)
-                        t:Activate()
-                        task.wait(0.05)
-                        t.Parent = bp
-                    end
+                    t.Parent = chr
+                    task.wait(0.04)
+                    pcall(function() t:Activate() end)
+                    task.wait(0.04)
+                    t.Parent = bp
                 end
             end
         end
     end)
 
+    -- ត្រឡប់ទៅ safezone
     if autoReturn and safeZoneCFrame then
         task.wait(returnDelay)
-        pcall(function()
-            HRP.CFrame = safeZoneCFrame
-        end)
+        pcall(function() HRP.CFrame = safeZoneCFrame end)
     end
 end
 
@@ -354,19 +309,47 @@ end
 -- ============================================================
 RunService.Heartbeat:Connect(function()
     if not isRunning then return end
+
     pcall(function()
         if Hum and Hum.Parent then
             Hum.WalkSpeed = speed
         end
     end)
+
     if autoSteal then
         local now = tick()
         if now - lastSteal >= stealDelay then
             lastSteal = now
-            for _, e in pairs(findEggs()) do
-                pcall(steal, e)
+            for _, e in pairs(eggList) do
+                if e and e.Parent then
+                    pcall(stealOne, e)
+                end
             end
         end
+    end
+end)
+
+-- ============================================================
+-- UPDATE INFO
+-- ============================================================
+local function updateInfo()
+    infoLabel.Text = "Eggs: "..#eggList..
+        "\nRemotes: "..#stealRemotes.."/"..#allRemotes..
+        "\nTools: "..#stealTools..
+        "\nSafeZone: "..(safeZoneCFrame and "YES" or "NO")
+end
+
+-- Background scanner
+spawn(function()
+    while task.wait(2) do
+        pcall(function()
+            if not isRunning then
+                scanEggs()
+                scanRemotes()
+                scanTools()
+                updateInfo()
+            end
+        end)
     end
 end)
 
@@ -394,8 +377,10 @@ onBtn.MouseButton1Click:Connect(function()
         onBtn.Text = "ON"
         onBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
         bs.Color = Color3.fromRGB(0, 255, 0)
-        status.Text = "NhazX Running"
+        scanEggs()
         scanRemotes()
+        scanTools()
+        updateInfo()
         if not safeZoneCFrame then
             safeZoneCFrame = autoDetectSafeZone()
         end
@@ -403,7 +388,6 @@ onBtn.MouseButton1Click:Connect(function()
         onBtn.Text = "OFF"
         onBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
         bs.Color = Color3.fromRGB(0, 255, 200)
-        status.Text = "NhazX Stopped"
         pcall(function() Hum.WalkSpeed = originalSpeed end)
     end
 end)
@@ -420,6 +404,8 @@ autoBtn.MouseButton1Click:Connect(function()
     if autoSteal then
         autoBtn.Text = "Auto Steal: ON"
         autoBtn.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+        scanEggs()
+        updateInfo()
     else
         autoBtn.Text = "Auto Steal: OFF"
         autoBtn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
@@ -439,33 +425,50 @@ end)
 
 setBtn.MouseButton1Click:Connect(function()
     safeZoneCFrame = HRP.CFrame
-    status.Text = "NhazX SafeZone OK"
-    task.wait(1.5)
-    status.Text = "NhazX | R:" .. #stealRemotes
+    updateInfo()
 end)
 
 detectBtn.MouseButton1Click:Connect(function()
-    local found = autoDetectSafeZone()
-    if found then
-        safeZoneCFrame = found
-        status.Text = "SafeZone Detected"
-    else
-        status.Text = "Not Found - Set Manual"
-    end
-    task.wait(1.5)
-    status.Text = "NhazX | R:" .. #stealRemotes
+    local f = autoDetectSafeZone()
+    if f then safeZoneCFrame = f end
+    updateInfo()
+end)
+
+scanBtn.MouseButton1Click:Connect(function()
+    scanEggs()
+    scanRemotes()
+    scanTools()
+    updateInfo()
+end)
+
+toolBtn.MouseButton1Click:Connect(function()
+    scanTools()
+    -- ប្រើ tool ទាំងអស់ដែលរកឃើញ
+    pcall(function()
+        local bp = LP:FindFirstChild("Backpack")
+        for _, t in pairs(stealTools) do
+            if t:IsA("Tool") and t.Parent then
+                t.Parent = Char
+                task.wait(0.05)
+                pcall(function() t:Activate() end)
+                task.wait(0.05)
+                if bp then t.Parent = bp end
+            end
+        end
+    end)
 end)
 
 -- ============================================================
 -- INIT
 -- ============================================================
+scanEggs()
 scanRemotes()
+scanTools()
 safeZoneCFrame = autoDetectSafeZone()
+updateInfo()
 
-if safeZoneCFrame then
-    status.Text = "NhazX SafeZone OK"
-else
-    status.Text = "Set SafeZone!"
-end
-
-print("[NhazX v14] ✓ Loaded | Remotes: " .. #stealRemotes .. " | SafeZone: " .. tostring(safeZoneCFrame ~= nil))
+print("[NhazX v16] ✓ Loaded")
+print("  Eggs: " .. #eggList)
+print("  Remotes: " .. #stealRemotes .. "/" .. #allRemotes)
+print("  Tools: " .. #stealTools)
+print("  SafeZone: " .. tostring(safeZoneCFrame ~= nil))
