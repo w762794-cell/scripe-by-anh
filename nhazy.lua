@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v43
--- Teleport ពេលមេដេញ (ពេលយើងទៅ steal egg មេវាដេញ)
--- មិនមែនពេលកាន់ egg ទេ
+-- palofsc: NhazX Steal An Egg - v45 FINAL
+-- Freeze NPC (កុំឱ្យដេញ) + Teleport ពេលដេញ + ON/OFF
+-- Range: unlimited
 
-print("[NhazX v43] Loading...")
+print("[NhazX v45] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -18,9 +18,10 @@ local on = false
 local godmode = true
 local home = H.CFrame
 local lastTp = 0
-local cooldown = 1.5           -- cooldown យូរ ដើម្បីកុំ teleport ញឹកញាប់
-local chaseDetectDist = 30     -- ចម្ងាយចាប់សត្វដេញ
+local cooldown = 2.5
 local lastChaseTime = 0
+local tpCount = 0
+local frozenNPCs = {}
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -75,10 +76,14 @@ end
 local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
 local gB = mkBtn("Godmode: ON", 46, Color3.fromRGB(0, 130, 0))
-local ddB = mkBtn("Chase Range: 30", 82, Color3.fromRGB(80, 40, 100))
-local hB = mkBtn("Set Home (here)", 118, Color3.fromRGB(0, 100, 180))
-local stB = mkBtn("Status: OFF", 154, Color3.fromRGB(40, 40, 40))
+local fzB = mkBtn("Freeze NPC: OFF", 82, Color3.fromRGB(80, 40, 100))
+local rdB = mkBtn("Range: unlimited", 118, Color3.fromRGB(0, 100, 180))
+local hB = mkBtn("Set Home (here)", 154, Color3.fromRGB(0, 80, 130))
+local stB = mkBtn("Status: OFF", 190, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
+
+-- Panel ត្រូវធំជាងមុន
+f.Size = UDim2.new(0, 185, 0, 240)
 
 local credit = Instance.new("TextLabel")
 credit.Size = UDim2.new(1, 0, 0, 18)
@@ -140,26 +145,89 @@ local function applyGodmode()
 end
 
 -- ============================================================
--- ពិនិត្យសត្វដេញ
+-- FREEZE NPC
 -- ============================================================
-local function findChaser()
-    if not H or not H.Parent then return nil end
-    
-    for _, o in pairs(workspace:GetDescendants()) do
-        if o:IsA("Model") and o ~= Ch then
-            local hum = o:FindFirstChildOfClass("Humanoid")
-            local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
-            
-            if hum and root and hum.Health > 0 then
-                local dist = (root.Position - H.Position).Magnitude
-                if dist < chaseDetectDist then
-                    -- មិនមែន player
+local freezeNPCs = false
+
+local function freezeAllNPCs()
+    if not freezeNPCs then return end
+    pcall(function()
+        for _, o in pairs(workspace:GetDescendants()) do
+            if o:IsA("Model") and o ~= Ch then
+                local hum = o:FindFirstChildOfClass("Humanoid")
+                local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
+                
+                if hum and root then
+                    -- ពិនិត្យថាមិនមែន player
                     local isPl = false
                     for _, pl in pairs(P:GetPlayers()) do
                         if pl.Character == o then isPl = true break end
                     end
+                    
                     if not isPl then
-                        return o, dist
+                        -- Freeze NPC
+                        pcall(function()
+                            hum.WalkSpeed = 0
+                            hum.JumpPower = 0
+                        end)
+                        pcall(function()
+                            if not frozenNPCs[o] then
+                                frozenNPCs[o] = root.Anchored
+                            end
+                            root.Anchored = true
+                        end)
+                    end
+                end
+            end
+        end
+    end)
+end
+
+local function unfreezeAllNPCs()
+    pcall(function()
+        for npc, wasAnchored in pairs(frozenNPCs) do
+            if npc and npc.Parent then
+                local hum = npc:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    hum.WalkSpeed = 16
+                    hum.JumpPower = 50
+                end
+                local root = npc:FindFirstChild("HumanoidRootPart") or npc.PrimaryPart
+                if root then
+                    root.Anchored = wasAnchored or false
+                end
+            end
+        end
+    end)
+    frozenNPCs = {}
+end
+
+-- ============================================================
+-- ពិនិត្យ NPC ដេញ
+-- ============================================================
+local function findChaser()
+    if not H or not H.Parent then return nil end
+
+    for _, o in pairs(workspace:GetDescendants()) do
+        if o:IsA("Model") and o ~= Ch then
+            local hum = o:FindFirstChildOfClass("Humanoid")
+            local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
+
+            if hum and root and hum.Health > 0 then
+                local isPl = false
+                for _, pl in pairs(P:GetPlayers()) do
+                    if pl.Character == o then isPl = true break end
+                end
+
+                if not isPl then
+                    local dist = (root.Position - H.Position).Magnitude
+                    local vel = hum.MoveDirection
+                    if vel.Magnitude > 0.1 then
+                        local toUs = (H.Position - root.Position).Unit
+                        local dot = vel.Unit:Dot(toUs)
+                        if dot > 0.5 then
+                            return o, dist
+                        end
                     end
                 end
             end
@@ -184,7 +252,7 @@ end
 -- LOOP
 -- ============================================================
 spawn(function()
-    while task.wait(0.15) do
+    while task.wait(0.3) do
         if not Ch or not Ch.Parent then continue end
 
         if godmode then
@@ -196,10 +264,20 @@ spawn(function()
             end)
         end
 
+        -- Freeze NPC បើបើក
+        if freezeNPCs then
+            freezeAllNPCs()
+        end
+
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        -- ពិនិត្យសត្វដេញក្នុងចម្ងាយ
+        -- បើ Freeze NPC បើក → មិនត្រូវការ teleport
+        if freezeNPCs then
+            stB.Text = "NPCs Frozen"
+            continue
+        end
+
         local chaser, dist = findChaser()
 
         if chaser then
@@ -207,14 +285,14 @@ spawn(function()
             if t - lastTp > cooldown then
                 lastTp = t
                 lastChaseTime = t
-                stB.Text = "Chased: " .. chaser.Name
+                tpCount = tpCount + 1
+                stB.Text = "TP #" .. tpCount .. ": " .. chaser.Name
                 tpHome()
-                print("[NhazX] Chased by " .. chaser.Name .. " at " .. math.floor(dist) .. " → Home")
+                print("[NhazX] #" .. tpCount .. " " .. chaser.Name .. " at " .. math.floor(dist))
             end
         else
-            -- បើគ្មានសត្វដេញ 1.5 វិនាទី → status watching
-            if tick() - lastChaseTime > 1.5 then
-                stB.Text = "Watching..."
+            if tick() - lastChaseTime > 2 then
+                stB.Text = "Watching... (" .. tpCount .. ")"
             end
         end
     end
@@ -241,6 +319,7 @@ oB.MouseButton1Click:Connect(function()
         bs.Color = Color3.fromRGB(0,255,0)
         stB.Text = "Watching..."
         lastChaseTime = 0
+        tpCount = 0
         applyGodmode()
     else
         oB.Text = "OFF"
@@ -262,12 +341,29 @@ gB.MouseButton1Click:Connect(function()
     end
 end)
 
-ddB.MouseButton1Click:Connect(function()
-    if chaseDetectDist == 30 then chaseDetectDist = 15
-    elseif chaseDetectDist == 15 then chaseDetectDist = 50
-    elseif chaseDetectDist == 50 then chaseDetectDist = 100
-    else chaseDetectDist = 30 end
-    ddB.Text = "Chase Range: " .. chaseDetectDist
+fzB.MouseButton1Click:Connect(function()
+    freezeNPCs = not freezeNPCs
+    if freezeNPCs then
+        fzB.Text = "Freeze NPC: ON"
+        fzB.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+        freezeAllNPCs()
+        stB.Text = "NPCs Frozen"
+    else
+        fzB.Text = "Freeze NPC: OFF"
+        fzB.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
+        unfreezeAllNPCs()
+        stB.Text = "NPCs Released"
+    end
+end)
+
+rdB.MouseButton1Click:Connect(function()
+    if rdB.Text == "Range: unlimited" then
+        rdB.Text = "Range: 30"
+        rdB.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    else
+        rdB.Text = "Range: unlimited"
+        rdB.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+    end
 end)
 
 hB.MouseButton1Click:Connect(function()
@@ -279,4 +375,4 @@ hB.MouseButton1Click:Connect(function()
 end)
 
 applyGodmode()
-print("[NhazX v43] Script By @nhaz_samurai")
+print("[NhazX v45] Script By @nhaz_samurai")
