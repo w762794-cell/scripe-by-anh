@@ -1,7 +1,7 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
 -- Credit: script by @nhaz_samurai
--- Speed + Treadmill auto + GUI អូសបាន
--- Paste into executor (Delta, Fluxus, Solara)
+-- SAFE MODE: បញ្ចុះល្បឿន + Anti-Kick ស្រាល ជៀសវាងគាំង/ងាប់
+-- Paste into executor
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -9,58 +9,72 @@ local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- =========================================================
--- SPEED
+-- CONFIG (បញ្ចុះដើម្បីជៀស anti-cheat)
 -- =========================================================
-local SPEED = 250
-
-task.spawn(function()
-    while task.wait(0.2) do
-        local char = LocalPlayer.Character
-        if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then
-                hum.WalkSpeed = SPEED
-                hum.JumpPower = 100
-                hum.UseJumpPower = true
-            end
-        end
-    end
-end)
+local CONFIG = {
+    Speed       = 60,        -- ធ្លាប់ 250 → បញ្ចុះ 60 (safe)
+    Jump        = 60,        -- ធ្លាប់ 100 → បញ្ចុះ 60
+    SpeedOn     = false,
+    AutoTP      = false,     -- បិទ auto-teleport (បណ្តាលគាំង)
+    TPInterval  = 3,
+    AntiKick    = true,
+}
 
 -- =========================================================
--- AUTO TREADMILL
+-- ANTI-KICK (safe)
 -- =========================================================
-local treadmillPos = nil
-
-for _, obj in pairs(workspace:GetDescendants()) do
-    if obj:IsA("BasePart") then
-        local n = obj.Name:lower()
-        if n:find("treadmill") or n:find("walk") or n:find("run") then
-            treadmillPos = obj
-            break
-        end
-    end
-end
-
--- បើរកមិនឃើញ → ប្រើ position បច្ចុប្បន្នរបស់អ្នក
-if not treadmillPos then
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        treadmillPos = char.HumanoidRootPart
-    end
-end
-
--- Auto teleport ត្រឡប់ treadmill រៀងរាល់ 1.5s
-if treadmillPos then
-    task.spawn(function()
-        while task.wait(1.5) do
-            local char = LocalPlayer.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                char.HumanoidRootPart.CFrame = treadmillPos.CFrame + Vector3.new(0, 3, 0)
-            end
+if CONFIG.AntiKick then
+    pcall(function()
+        local mt = getrawmetatable(game)
+        if mt and mt.__namecall then
+            local old = mt.__namecall
+            setreadonly(mt, false)
+            mt.__namecall = newcclosure(function(self, ...)
+                if getnamecallmethod() == "Kick" and self == LocalPlayer then
+                    return nil
+                end
+                return old(self, ...)
+            end)
+            setreadonly(mt, true)
         end
     end)
 end
+
+-- =========================================================
+-- SPEED (smooth, មិនគាំង)
+-- =========================================================
+local function applySpeed()
+    local char = LocalPlayer.Character
+    if not char then return end
+    local hum = char:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    if CONFIG.SpeedOn then
+        hum.WalkSpeed = CONFIG.Speed
+        hum.JumpPower = CONFIG.Jump
+        hum.UseJumpPower = true
+    else
+        hum.WalkSpeed = 16
+        hum.JumpPower = 50
+    end
+end
+
+-- កែរៀងរាល់ 1 វិនាទី (ជំនួស 0.2 → ជៀស rate-limit)
+task.spawn(function()
+    while task.wait(1) do
+        if CONFIG.SpeedOn then applySpeed() end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    task.wait(1.5)
+    applySpeed()
+end)
+
+-- =========================================================
+-- TREADMILL POSITION
+-- =========================================================
+local treadmillPos = nil
 
 -- =========================================================
 -- DRAGGABLE
@@ -96,7 +110,7 @@ local function makeDraggable(frame, dragArea)
 end
 
 -- =========================================================
--- GUI
+-- GUI (safe, មិន animate)
 -- =========================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "NhazX"
@@ -104,12 +118,10 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 999
 ScreenGui.Parent = PlayerGui
 
--- Mini round button
 local MiniBtn = Instance.new("TextButton")
 MiniBtn.Size = UDim2.new(0, 55, 0, 55)
 MiniBtn.Position = UDim2.new(0.75, 0, 0.25, 0)
 MiniBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-MiniBtn.BorderSizePixel = 0
 MiniBtn.Text = "N"
 MiniBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 MiniBtn.Font = Enum.Font.GothamBold
@@ -119,9 +131,8 @@ MiniBtn.Parent = ScreenGui
 local MC = Instance.new("UICorner"); MC.CornerRadius = UDim.new(1, 0); MC.Parent = MiniBtn
 local MS = Instance.new("UIStroke"); MS.Color = Color3.fromRGB(255, 255, 255); MS.Thickness = 2; MS.Parent = MiniBtn
 
--- Main Panel
 local Panel = Instance.new("Frame")
-Panel.Size = UDim2.new(0, 230, 0, 300)
+Panel.Size = UDim2.new(0, 230, 0, 310)
 Panel.Position = UDim2.new(0, 30, 0, 220)
 Panel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 Panel.BorderSizePixel = 0
@@ -131,10 +142,9 @@ Panel.Parent = ScreenGui
 local PC = Instance.new("UICorner"); PC.CornerRadius = UDim.new(0, 10); PC.Parent = Panel
 local PS = Instance.new("UIStroke"); PS.Color = Color3.fromRGB(230, 40, 40); PS.Thickness = 2; PS.Parent = Panel
 
- local Title = Instance.new("TextLabel")
+local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 34)
-Title.BackgroundColor3 = Color3.fromRGB(230, 40,40)
-Title.BorderSizePixel = 0
+Title.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
 Title.Text = "NhazX"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
@@ -155,14 +165,14 @@ Credit.Parent = Panel
 
 local function mkBtn(text, y, cb)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, -20, 0, 36)
+    b.Size = UDim2.new(1, -20, 0, 34)
     b.Position = UDim2.new(0, 10, 0, y)
     b.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
     b.BorderSizePixel = 0
     b.Text = text
     b.TextColor3 = Color3.fromRGB(255, 255, 255)
     b.Font = Enum.Font.GothamBold
-    b.TextSize = 13
+    b.TextSize = 12
     b.Parent = Panel
     local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
     b.MouseButton1Click:Connect(cb)
@@ -170,24 +180,21 @@ local function mkBtn(text, y, cb)
 end
 
 local speedBtn
-speedBtn = mkBtn("SPEED: ON (250)", 60, function()
-    if SPEED > 20 then
-        SPEED = 16
-        speedBtn.Text = "SPEED: OFF (16)"
-    else
-        SPEED = 250
-        speedBtn.Text = "SPEED: ON (250)"
-    end
+speedBtn = mkBtn("SPEED: OFF (safe 60)", 58, function()
+    CONFIG.SpeedOn = not CONFIG.SpeedOn
+    speedBtn.Text = CONFIG.SpeedOn and "SPEED: ON (60)" or "SPEED: OFF (safe 60)"
+    speedBtn.BackgroundColor3 = CONFIG.SpeedOn and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
+    applySpeed()
 end)
 
-mkBtn("SET CURRENT POS", 105, function()
+mkBtn("SET CURRENT POS", 100, function()
     local char = LocalPlayer.Character
     if char and char:FindFirstChild("HumanoidRootPart") then
         treadmillPos = char.HumanoidRootPart
     end
 end)
 
-mkBtn("TELEPORT BACK", 150, function()
+mkBtn("TELEPORT BACK", 142, function()
     if treadmillPos then
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
@@ -196,19 +203,14 @@ mkBtn("TELEPORT BACK", 150, function()
     end
 end)
 
-mkBtn("FIND TREADMILL", 195, function()
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local n = obj.Name:lower()
-            if n:find("treadmill") or n:find("walk") or n:find("run") then
-                treadmillPos = obj
-                break
-            end
-        end
-    end
+local autoTPBtn
+autoTPBtn = mkBtn("AUTO TP: OFF", 184, function()
+    CONFIG.AutoTP = not CONFIG.AutoTP
+    autoTPBtn.Text = "AUTO TP: " .. (CONFIG.AutoTP and "ON" or "OFF")
+    autoTPBtn.BackgroundColor3 = CONFIG.AutoTP and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
 end)
 
-mkBtn("CLOSE", 240, function()
+mkBtn("CLOSE", 226, function()
     Panel.Visible = false
 end)
 
@@ -217,12 +219,25 @@ MiniBtn.MouseButton1Click:Connect(function()
     MiniBtn.BackgroundColor3 = Panel.Visible and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(230, 40, 40)
 end)
 
--- ធ្វើឲ្យអូសបាន
 makeDraggable(MiniBtn)
 makeDraggable(Panel, Title)
 
-game:GetService("StarterGui"):SetCore("SendNotification", {
-    Title = "NhazX",
-    Text = "Loaded | @nhaz_samurai",
-    Duration = 5
-})
+-- Auto TP loop (បើបើក)
+task.spawn(function()
+    while task.wait(CONFIG.TPInterval) do
+        if CONFIG.AutoTP and treadmillPos then
+            local char = LocalPlayer.Character
+            if char and char:FindFirstChild("HumanoidRootPart") then
+                char.HumanoidRootPart.CFrame = treadmillPos.CFrame + Vector3.new(0, 3, 0)
+            end
+        end
+    end
+end)
+
+pcall(function()
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "NhazX SAFE",
+        Text = "Loaded low-speed mode | @nhaz_samurai",
+        Duration = 5
+    })
+end)
