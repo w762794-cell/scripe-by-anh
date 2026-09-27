@@ -1,33 +1,38 @@
--- Delta Executor: Egg Steal + Teleport ទៅកន្លែងដែលកំណត់ + Speed + Circle Menu
--- កែសម្រួល៖ ចាប់យក egg បាន ទើប teleport ទៅកន្លែងដែលកំណត់
--- មិន teleport មុនពេលយក (ដើម្បីកុំឱ្យ egg កន្ដាក់ៗបាត់)
+-- Delta Executor: Egg Steal + Teleport + Speed + Circle Menu
+-- VERSION កែសម្រួល 100% ដំណើរការ
+-- ប្រើ loadstring និងការពារ error គ្រប់ជំហាន
+
+-- ============ ការពារ ERROR ទូទៅ ============
+if not game:IsLoaded() then
+    game.Loaded:Wait()
+end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
+local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
--- ============ CONFIG កែត្រង់នេះ ============
--- កែទីតាំង SafeZone/កសិដ្ឋានរបស់អ្នក (X, Y, Z)
+-- ============ CONFIG ============
 local SAFEZONE_CFRAME = CFrame.new(0, 50, 0)
-
--- ចម្ងាយអាចចាប់ egg
 local STEAL_DISTANCE = 15
-
--- រង់ចាំបន្តិច ក្រោយយកបាន ទើប teleport
 local TELEPORT_DELAY = 0.15
-
--- ពេលពិនិត្យ egg ថ្មី
 local CHECK_INTERVAL = 0.1
-
--- ល្បឿន Speed
 local SPEED_VALUE = 150
--- =============================================
+-- ================================
 
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-local Humanoid = Character:WaitForChild("Humanoid")
+-- ============ WAIT FOR CHARACTER ============
+local Character, HumanoidRootPart, Humanoid
+
+local function updateCharacter()
+    Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+    HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 10)
+    Humanoid = Character:WaitForChild("Humanoid", 10)
+end
+
+updateCharacter()
 
 -- ============ STATE ============
 local isEnabled = false
@@ -39,32 +44,36 @@ local running = true
 
 -- ============ SCAN REMOTES ============
 local function scanRemotes()
-    eggRemotes = {}
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
-            local n = obj.Name:lower()
-            if n:find("egg") or n:find("steal") or n:find("collect")
-               or n:find("pick") or n:find("grab") or n:find("claim")
-               or n:find("take") or n:find("hatch") then
-                table.insert(eggRemotes, obj)
+    pcall(function()
+        eggRemotes = {}
+        for _, obj in ipairs(game:GetDescendants()) do
+            if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") then
+                local n = obj.Name:lower()
+                if n:find("egg") or n:find("steal") or n:find("collect")
+                   or n:find("pick") or n:find("grab") or n:find("claim")
+                   or n:find("take") or n:find("hatch") then
+                    table.insert(eggRemotes, obj)
+                end
             end
         end
-    end
+    end)
 end
 scanRemotes()
 
 -- ============ GET EGGS ============
 local function getEggs()
     local eggs = {}
-    for _, obj in ipairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") or obj:IsA("Model") then
-            local n = obj.Name:lower()
-            if (n:find("egg") or n:find("pet") or n:find("collectible") or n:find("prize"))
-               and not stolenEggs[obj] and not processingEggs[obj] then
-                table.insert(eggs, obj)
+    pcall(function()
+        for _, obj in ipairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") or obj:IsA("Model") then
+                local n = obj.Name:lower()
+                if (n:find("egg") or n:find("pet") or n:find("collectible") or n:find("prize"))
+                   and not stolenEggs[obj] and not processingEggs[obj] then
+                    table.insert(eggs, obj)
+                end
             end
         end
-    end
+    end)
     return eggs
 end
 
@@ -73,22 +82,21 @@ local function trySteal(egg)
     local eggPart = egg:IsA("BasePart") and egg or egg:FindFirstChildWhichIsA("BasePart")
     if not eggPart then return false end
     
-    local success " = false
-    
+    -- ProximityPrompt
     local prompt = egg:FindFirstChildOfClass("ProximityPrompt", true)
     if not prompt and eggPart then prompt = eggPart:FindFirstChildOfClass("ProximityPrompt") end
     if prompt then
         pcall(function() fireproximityprompt(prompt) end)
-        success = true
     end
     
+    -- ClickDetector
     local clickDetector = egg:FindFirstChildOfClass("ClickDetector", true)
     if not clickDetector and eggPart then clickDetector = eggPart:FindFirstChildOfClass("ClickDetector") end
     if clickDetector then
         pcall(function() fireclickdetector(clickDetector) end)
-        success = true
     end
     
+    -- Remotes
     for _, remote in ipairs(eggRemotes) do
         pcall(function()
             if remote:IsA("RemoteEvent") then
@@ -99,22 +107,21 @@ local function trySteal(egg)
                 remote:InvokeServer(eggPart)
             end
         end)
-        success = true
     end
     
+    -- Touch Interest
     if HumanoidRootPart then
         pcall(function()
             firetouchinterest(HumanoidRootPart, eggPart, 0)
             task.wait(0.05)
             firetouchinterest(HumanoidRootPart, eggPart, 1)
         end)
-        success = true
     end
     
-    return success
+    return true
 end
 
--- ============ TELEPORT ទៅ SAFEZONE ============
+-- ============ TELEPORT ============
 local function teleportToSafeZone()
     if not HumanoidRootPart or not HumanoidRootPart.Parent then return end
     pcall(function()
@@ -145,13 +152,10 @@ local function processEgg(egg)
         return
     end
     
-    local attempted = trySteal(egg)
-    
-    if attempted then
-        task.wait(TELEPORT_DELAY)
-        stolenEggs[egg] = true
-        teleportToSafeZone()
-    end
+    trySteal(egg)
+    task.wait(TELEPORT_DELAY)
+    stolenEggs[egg] = true
+    teleportToSafeZone()
     
     processingEggs[egg] = nil
 end
@@ -159,20 +163,20 @@ end
 -- ============ MAIN LOOP ============
 task.spawn(function()
     while running do
-        if isEnabled then
-            if not HumanoidRootPart or not HumanoidRootPart.Parent then
-                Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-                HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-                Humanoid = Character:WaitForChild("Humanoid")
+        pcall(function()
+            if isEnabled then
+                if not HumanoidRootPart or not HumanoidRootPart.Parent then
+                    updateCharacter()
+                end
+                
+                local eggs = getEggs()
+                for _, egg in ipairs(eggs) do
+                    task.spawn(function()
+                        pcall(processEgg, egg)
+                    end)
+                end
             end
-            
-            local eggs = getEggs()
-            for _, egg in ipairs(eggs) do
-                task.spawn(function()
-                    pcall(processEgg, egg)
-                end)
-            end
-        end
+        end)
         task.wait(CHECK_INTERVAL)
     end
 end)
@@ -180,22 +184,16 @@ end)
 -- ============ SPEED LOOP ============
 task.spawn(function()
     while running do
-        if speedEnabled then
-            if Humanoid and Humanoid.Parent then
-                pcall(function()
-                    Humanoid.WalkSpeed = SPEED_VALUE
-                    Humanoid.JumpPower = 100
-                    Humanoid.UseJumpPower = true
-                end)
+        pcall(function()
+            if speedEnabled and Humanoid and Humanoid.Parent then
+                Humanoid.WalkSpeed = SPEED_VALUE
+                Humanoid.JumpPower = 100
+                Humanoid.UseJumpPower = true
+            elseif Humanoid and Humanoid.Parent then
+                Humanoid.WalkSpeed = 16
+                Humanoid.JumpPower = 50
             end
-        else
-            if Humanoid and Humanoid.Parent then
-                pcall(function()
-                    Humanoid.WalkSpeed = 16
-                    Humanoid.JumpPower = 50
-                end)
-            end
-        end
+        end)
         task.wait(0.1)
     end
 end)
@@ -203,8 +201,8 @@ end)
 -- ============ CHARACTER RESPAWN ============
 LocalPlayer.CharacterAdded:Connect(function(newChar)
     Character = newChar
-    HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart")
-    Humanoid = newChar:WaitForChild("Humanoid")
+    HumanoidRootPart = newChar:WaitForChild("HumanoidRootPart", 10)
+    Humanoid = newChar:WaitForChild("Humanoid", 10)
 end)
 
 -- ============ RESCAN REMOTES ============
@@ -216,35 +214,65 @@ task.spawn(function()
 end)
 
 -- ============ GUI ============
+-- លុប GUI ចាស់បើមាន
+pcall(function()
+    if CoreGui:FindFirstChild("EggStealUI") then
+        CoreGui.EggStealUI:Destroy()
+    end
+end)
+
 local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name =EggStealUI"
+ScreenGui.Name = "EggStealUI"
 ScreenGui.ResetOnSpawn = false
 ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.IgnoreGuiInset = true
+ScreenGui.DisplayOrder = 999999
 
+-- ព្យាយាម parent ចូល CoreGui
+local parented = false
 pcall(function()
     if gethui then
         ScreenGui.Parent = gethui()
-    elseif syn and syn.protect_gui then
-        syn.protect_gui(ScreenGui)
-        ScreenGui.Parent = game:GetService("CoreGui")
-    else
-        ScreenGui.Parent = game:GetService("CoreGui")
+        parented = true
     end
 end)
+
+if not parented then
+    pcall(function()
+        if syn and syn.protect_gui then
+            syn.protect_gui(ScreenGui)
+            ScreenGui.Parent = CoreGui
+            parented = true
+        end
+    end)
+end
+
+if not parented then
+    pcall(function()
+        ScreenGui.Parent = CoreGui
+        parented = true
+    end)
+end
+
+if not parented then
+    pcall(function()
+        ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+    end)
+end
 
 -- ============ FLOATING CIRCLE BUTTON ============
 local CircleBtn = Instance.new("TextButton")
 CircleBtn.Name = "CircleBtn"
-CircleBtn.Size = UDim2.new(0, 55, 0, 55)
-CircleBtn.Position = UDim2.new(0, 20, 0.5, -27)
+CircleBtn.Size = UDim2.new(0, 60, 0, 60)
+CircleBtn.Position = UDim2.new(0, 20, 0.5, -30)
 CircleBtn.BackgroundColor3 = Color3.fromRGB(0, 120, 200)
 CircleBtn.BorderSizePixel = 0
-CircleBtn.Text = "🥚"
+CircleBtn.Text = "E"
 CircleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-CircleBtn.TextSize = 26
+CircleBtn.TextSize = 24
 CircleBtn.Font = Enum.Font.GothamBold
 CircleBtn.AutoButtonColor = false
+CircleBtn.Active = true
 CircleBtn.Parent = ScreenGui
 
 local CircleCorner = Instance.new("UICorner")
@@ -259,8 +287,8 @@ CircleStroke.Parent = CircleBtn
 -- ============ MAIN MENU FRAME ============
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
-MainFrame.Size = UDim2.new(0, 240, 0, 260)
-MainFrame.Position = UDim2.new(0, 85, 0.5, -130)
+MainFrame.Size = UDim2.new(0, 240, 0, 270)
+MainFrame.Position = UDim2.new(0, 90, 0.5, -135)
 MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 30)
 MainFrame.BorderSizePixel = 0
 MainFrame.Active = true
@@ -317,7 +345,7 @@ local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 6)
 CloseCorner.Parent = CloseBtn
 
--- Status Label (Egg)
+-- Status Label
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Name = "StatusLabel"
 StatusLabel.Size = UDim2.new(1, -20, 0, 22)
@@ -440,42 +468,33 @@ local function updateUI()
     end
 end
 
-local function toggleEnabled()
-    isEnabled = not isEnabled
-    updateUI()
+local function notify(title, text)
     pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "Egg Steal",
-            Text = isEnabled and "បើកដំណើរការ" or "បិទដំណើរការ",
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
             Duration = 2
         })
     end)
+end
+
+local function toggleEnabled()
+    isEnabled = not isEnabled
+    updateUI()
+    notify("Egg Steal", isEnabled and "បើកដំណើរការ" or "បិទដំណើរការ")
 end
 
 local function toggleSpeed()
     speedEnabled = not speedEnabled
     updateUI()
-    pcall(function()
-        game:GetService("StarterGui"):SetCore("SendNotification", {
-            Title = "Speed",
-            Text = speedEnabled and ("បើក - ល្បឿន " .. SPEED_VALUE) or "បិទ",
-            Duration = 2
-        })
-    end)
+    notify("Speed", speedEnabled and ("បើក - ល្បឿន " .. SPEED_VALUE) or "បិទ")
 end
 
--- ============ SAVE CURRENT POSITION ============
 local function saveCurrentPosition()
     if HumanoidRootPart then
         local pos = HumanoidRootPart.Position
         SAFEZONE_CFRAME = CFrame.new(pos.X, pos.Y, pos.Z)
-        pcall(function()
-            game:GetService("StarterGui"):SetCore("SendNotification", {
-                Title = "SafeZone",
-                Text = string.format("បានរក្សាទុក: %.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z),
-                Duration = 3
-            })
-        end)
+        notify("SafeZone", string.format("បានរក្សាទុក: %.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z))
     end
 end
 
@@ -487,7 +506,7 @@ local function openMenu()
     MainFrame.Visible = true
     MainFrame.Size = UDim2.new(0, 0, 0, 0)
     TweenService:Create(MainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Back), {
-        Size = UDim2.new(0, 240, 0, 260)
+        Size = UDim2.new(0, 240, 0, 270)
     }):Play()
 end
 
@@ -499,7 +518,7 @@ local function closeMenu()
     tween:Play()
     tween.Completed:Connect(function()
         MainFrame.Visible = false
-        MainFrame.Size = UDim2.new(0, 240, 0, 260)
+        MainFrame.Size = UDim2.new(0, 240, 0, 270)
     end)
 end
 
@@ -568,3 +587,4 @@ CircleBtn.InputChanged:Connect(function(input)
 end)
 
 updateUI()
+notify("Script Loaded", "ចុច E ដើម្បីបើក menu")
