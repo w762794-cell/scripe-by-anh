@@ -1,9 +1,11 @@
--- palofsc: NhazX SIMPLE v22
--- តូចបំផុត ធានាដំណើរការ
+-- palofsc: NhazX v23 - Mobile Fix
+-- ដោះស្រាយ: អូស GUI បាន (សម្រាប់ Mobile) + បន្ថែមប៊ូតុង ON/OFF Speed
+-- រក្សា: Auto Steal -> ត្រឡប់ Home ភ្លាម
 
 local P = game:GetService("Players")
 local R = game:GetService("ReplicatedStorage")
 local S = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
 
 local LP = P.LocalPlayer
 local Ch = LP.Character or LP.CharacterAdded:Wait()
@@ -13,19 +15,25 @@ local PG = LP:WaitForChild("PlayerGui")
 
 local on = false
 local auto = false
+local speedOn = false
 local spd = 100
+local spdList = {100, 200, 500, 1000, 2000}
+local si = 1
+local originalSpd = Hu.WalkSpeed
 local home = H.CFrame
 local rem = {}
 
+-- រក remote
 for _, r in pairs(R:GetDescendants()) do
     if r:IsA("RemoteEvent") then
         local n = string.lower(r.Name)
-        if n:find("collect") or n:find("steal") or n:find("grab") or n:find("egg") or n:find("claim") then
+        if n:find("collect") or n:find("steal") or n:find("grab") or n:find("egg") or n:find("claim") or n:find("place") then
             table.insert(rem, r)
         end
     end
 end
 
+-- លុប GUI ចាស់
 if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
 
 local g = Instance.new("ScreenGui")
@@ -33,23 +41,24 @@ g.Name = "NhazX"
 g.ResetOnSpawn = false
 g.Parent = PG
 
+-- ប៊ូតុងមូល N
 local b = Instance.new("TextButton")
 b.Size = UDim2.new(0, 55, 0, 55)
-b.Position = UDim2.new(0, 20, 0, 200)
+b.Position = UDim2.new(0, 20, 0.3, 0) -- ដាក់ពាក់កណ្តាលអេក្រង់កុំឱ្យលិច
 b.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 b.Text = "N"
 b.TextColor3 = Color3.fromRGB(0, 255, 200)
 b.TextSize = 28
 b.Font = Enum.Font.GothamBold
 b.BorderSizePixel = 0
-b.Draggable = true
 b.Parent = g
 local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = b
 local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = b
 
+-- Panel
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 175, 0, 220)
-f.Position = UDim2.new(0, 85, 0, 200)
+f.Size = UDim2.new(0, 175, 0, 260)
+f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
 f.Visible = false
@@ -84,10 +93,47 @@ end
 
 local oB = btn("OFF", 34)
 local aB = btn("Auto: OFF", 68)
-local sB = btn("Speed: 100", 102)
-local hB = btn("Set Home (here)", 136, Color3.fromRGB(0, 130, 0))
-local rB = btn("Remotes: "..#rem, 170, Color3.fromRGB(40, 40, 40))
+local sB = btn("Speed Toggle: OFF", 102, Color3.fromRGB(80, 40, 40))
+local sdB = btn("Speed: 100", 136)
+local hB = btn("Set Home (here)", 170, Color3.fromRGB(0, 130, 0))
+local rB = btn("Remotes: "..#rem, 204, Color3.fromRGB(40, 40, 40))
+rB.TextSize = 10
 
+-- ============================================================
+-- មុខងារអូស GUI (សម្រាប់ Mobile និង PC)
+-- ============================================================
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+b.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = b.Position
+    end
+end)
+
+b.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end)
+
+UIS.InputChanged:Connect(function(input)
+    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - dragStart
+        local newX = startPos.X.Offset + delta.X
+        local newY = startPos.Y.Offset + delta.Y
+        b.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
+        -- ធ្វើឱ្យ panel ធ្វើតាមប៊ូតុង
+        f.Position = UDim2.new(0, newX + 65, 0, newY)
+    end
+end)
+
+-- ============================================================
+-- STEAL LOGIC
+-- ============================================================
 local function findEgg()
     for _, o in pairs(workspace:GetDescendants()) do
         if (o:IsA("BasePart") or o:IsA("Model")) and string.find(string.lower(o.Name), "egg") then
@@ -139,7 +185,14 @@ local last = 0
 
 S.Heartbeat:Connect(function()
     if not on then return end
-    pcall(function() Hu.WalkSpeed = spd end)
+    
+    -- បើក Speed តែពេល speedOn បើក
+    if speedOn then
+        pcall(function() Hu.WalkSpeed = spd end)
+    else
+        pcall(function() Hu.WalkSpeed = originalSpd end)
+    end
+
     if auto then
         local n = tick()
         if n - last >= 1.5 then
@@ -154,8 +207,12 @@ LP.CharacterAdded:Connect(function(c)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
+    originalSpd = Hu.WalkSpeed
 end)
 
+-- ============================================================
+-- BUTTONS
+-- ============================================================
 b.MouseButton1Click:Connect(function() f.Visible = not f.Visible end)
 
 oB.MouseButton1Click:Connect(function()
@@ -163,6 +220,9 @@ oB.MouseButton1Click:Connect(function()
     oB.Text = on and "ON" or "OFF"
     oB.BackgroundColor3 = on and Color3.fromRGB(0,180,0) or Color3.fromRGB(55,55,55)
     bs.Color = on and Color3.fromRGB(0,255,0) or Color3.fromRGB(0,255,200)
+    if not on then
+        pcall(function() Hu.WalkSpeed = originalSpd end)
+    end
 end)
 
 aB.MouseButton1Click:Connect(function()
@@ -172,11 +232,22 @@ aB.MouseButton1Click:Connect(function()
 end)
 
 sB.MouseButton1Click:Connect(function()
-    if spd == 100 then spd = 200
-    elseif spd == 200 then spd = 500
-    elseif spd == 500 then spd = 1000
-    else spd = 100 end
-    sB.Text = "Speed: "..spd
+    speedOn = not speedOn
+    if speedOn then
+        sB.Text = "Speed Toggle: ON"
+        sB.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
+    else
+        sB.Text = "Speed Toggle: OFF"
+        sB.BackgroundColor3 = Color3.fromRGB(80, 40, 40)
+        pcall(function() Hu.WalkSpeed = originalSpd end)
+    end
+end)
+
+sdB.MouseButton1Click:Connect(function()
+    si = si + 1
+    if si > #spdList then si = 1 end
+    spd = spdList[si]
+    sdB.Text = "Speed: "..spd
 end)
 
 hB.MouseButton1Click:Connect(function()
@@ -186,4 +257,4 @@ hB.MouseButton1Click:Connect(function()
     hB.Text = "Set Home (here)"
 end)
 
-print("[NhazX v22] Remotes: "..#rem)
+print("[NhazX v23] Remotes: "..#rem)
