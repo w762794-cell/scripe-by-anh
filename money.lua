@@ -1,6 +1,6 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
 -- Credit: script by @nhaz_samurai
--- GUI អូសបាន (draggable) + Speed + Treadmill teleport
+-- Speed + Treadmill auto + GUI អូសបាន
 -- Paste into executor (Delta, Fluxus, Solara)
 
 local Players = game:GetService("Players")
@@ -14,7 +14,7 @@ local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local SPEED = 250
 
 task.spawn(function()
-    while task.wait(0.3) do
+    while task.wait(0.2) do
         local char = LocalPlayer.Character
         if char then
             local hum = char:FindFirstChildOfClass("Humanoid")
@@ -28,9 +28,10 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- FIND TREADMILL
+-- AUTO TREADMILL
 -- =========================================================
 local treadmillPos = nil
+
 for _, obj in pairs(workspace:GetDescendants()) do
     if obj:IsA("BasePart") then
         local n = obj.Name:lower()
@@ -41,9 +42,18 @@ for _, obj in pairs(workspace:GetDescendants()) do
     end
 end
 
+-- បើរកមិនឃើញ → ប្រើ position បច្ចុប្បន្នរបស់អ្នក
+if not treadmillPos then
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        treadmillPos = char.HumanoidRootPart
+    end
+end
+
+-- Auto teleport ត្រឡប់ treadmill រៀងរាល់ 1.5s
 if treadmillPos then
     task.spawn(function()
-        while task.wait(2) do
+        while task.wait(1.5) do
             local char = LocalPlayer.Character
             if char and char:FindFirstChild("HumanoidRootPart") then
                 char.HumanoidRootPart.CFrame = treadmillPos.CFrame + Vector3.new(0, 3, 0)
@@ -53,7 +63,7 @@ if treadmillPos then
 end
 
 -- =========================================================
--- DRAGGABLE FUNCTION (អូស GUI បាន)
+-- DRAGGABLE
 -- =========================================================
 local function makeDraggable(frame, dragArea)
     dragArea = dragArea or frame
@@ -86,7 +96,7 @@ local function makeDraggable(frame, dragArea)
 end
 
 -- =========================================================
--- GUI BUILD
+-- GUI
 -- =========================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "NhazX"
@@ -94,10 +104,10 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 999
 ScreenGui.Parent = PlayerGui
 
--- Mini round button (អូសបាន)
+-- Mini round button
 local MiniBtn = Instance.new("TextButton")
 MiniBtn.Size = UDim2.new(0, 55, 0, 55)
-MiniBtn.Position = UDim2.new(0, 30, 0, 150)
+MiniBtn.Position = UDim2.new(0.75, 0, 0.25, 0)
 MiniBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
 MiniBtn.BorderSizePixel = 0
 MiniBtn.Text = "N"
@@ -109,7 +119,7 @@ MiniBtn.Parent = ScreenGui
 local MC = Instance.new("UICorner"); MC.CornerRadius = UDim.new(1, 0); MC.Parent = MiniBtn
 local MS = Instance.new("UIStroke"); MS.Color = Color3.fromRGB(255, 255, 255); MS.Thickness = 2; MS.Parent = MiniBtn
 
--- Main Panel (អូសបាន)
+-- Main Panel
 local Panel = Instance.new("Frame")
 Panel.Size = UDim2.new(0, 230, 0, 300)
 Panel.Position = UDim2.new(0, 30, 0, 220)
@@ -121,10 +131,9 @@ Panel.Parent = ScreenGui
 local PC = Instance.new("UICorner"); PC.CornerRadius = UDim.new(0, 10); PC.Parent = Panel
 local PS = Instance.new("UIStroke"); PS.Color = Color3.fromRGB(230, 40, 40); PS.Thickness = 2; PS.Parent = Panel
 
--- Title bar (អូសតាម title)
-local Title = Instance.new("TextLabel")
+ local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 34)
-Title.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
+Title.BackgroundColor3 = Color3.fromRGB(230, 40,40)
 Title.BorderSizePixel = 0
 Title.Text = "NhazX"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
@@ -171,7 +180,14 @@ speedBtn = mkBtn("SPEED: ON (250)", 60, function()
     end
 end)
 
-mkBtn("TELEPORT TREADMILL", 105, function()
+mkBtn("SET CURRENT POS", 105, function()
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("HumanoidRootPart") then
+        treadmillPos = char.HumanoidRootPart
+    end
+end)
+
+mkBtn("TELEPORT BACK", 150, function()
     if treadmillPos then
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
@@ -180,7 +196,7 @@ mkBtn("TELEPORT TREADMILL", 105, function()
     end
 end)
 
-mkBtn("FIND TREADMILL", 150, function()
+mkBtn("FIND TREADMILL", 195, function()
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") then
             local n = obj.Name:lower()
@@ -192,32 +208,21 @@ mkBtn("FIND TREADMILL", 150, function()
     end
 end)
 
-mkBtn("JUMP POWER 100", 195, function()
-    local char = LocalPlayer.Character
-    if char then
-        local hum = char:FindFirstChildOfClass("Humanoid")
-        if hum then hum.JumpPower = 100; hum.UseJumpPower = true end
-    end
-end)
-
 mkBtn("CLOSE", 240, function()
     Panel.Visible = false
 end)
 
--- Toggle panel
 MiniBtn.MouseButton1Click:Connect(function()
     Panel.Visible = not Panel.Visible
     MiniBtn.BackgroundColor3 = Panel.Visible and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(230, 40, 40)
 end)
 
--- =========================================================
 -- ធ្វើឲ្យអូសបាន
--- =========================================================
-makeDraggable(MiniBtn)                  -- អូសរូបមូល
-makeDraggable(Panel, Title)             -- អូសតាម title bar
+makeDraggable(MiniBtn)
+makeDraggable(Panel, Title)
 
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "NhazX",
-    Text = "Draggable GUI | @nhaz_samurai",
+    Text = "Loaded | @nhaz_samurai",
     Duration = 5
 })
