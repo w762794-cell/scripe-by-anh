@@ -1,146 +1,146 @@
--- Steal An Egg | Delta Mobile/PC
--- made by seraph
+-- palofsc: Delta Roblox egg steal script + anti-cheat bypass
+-- ស្គ្រីបនេះរួមបញ្ចូល bypass សម្រាប់ anti-cheat ថ្មី (update 26.09.2026)
+-- ប្រើ hookmetamethod និង property spoofing ដើម្បីលាក់ការកែប្រែ
 
 local Players = game:GetService("Players")
-local RS = game:GetService("ReplicatedStorage")
-local UIS = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
-local LP = Players.LocalPlayer
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Humanoid = Character:WaitForChild("Humanoid")
 
--- ===== CONFIG =====
-local FARM_POS = Vector3.new(0, 50, 0) -- ដាក់ទីតាំងកសិដ្ឋានរបស់អ្នក
-local SPEED_VALUE = 1e9 -- 1B default
-local TELEPORT_ON_STEAL = true
+-- ============================================================
+-- ANTI-CHEAT BYPASS SECTION
+-- រក្សាតម្លៃដើមសម្រាប់ property ដែល anti-cheat ពិនិត្យ
+-- ============================================================
 
--- ===== GUI =====
-local gui = Instance.new("ScreenGui")
-gui.Name = "SeraphEgg"
-gui.ResetOnSpawn = false
-gui.Parent = LP:WaitForChild("PlayerGui")
+local originalWalkSpeed = Humanoid.WalkSpeed
+local originalJumpPower = Humanoid.JumpPower
+local originalCFrame = HumanoidRootPart.CFrame
 
-local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 60, 0, 60)
-main.Position = UDim2.new(0, 20, 0.5, -30)
-main.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-main.BackgroundTransparency = 0.2
-main.BorderSizePixel = 0
-main.Active = true
-main.Draggable = true
-main.Parent = gui
-Instance.new("UICorner", main).CornerRadius = UDim.new(1, 0)
+-- Hook __index និង __newindex ដើម្បីលាក់ការកែប្រែ
+local mt = getrawmetatable(game)
+local oldIndex = mt.__index
+local oldNewIndex = mt.__newindex
 
-local toggle = Instance.new("TextButton")
-toggle.Size = UDim2.new(1, 0, 1, 0)
-toggle.BackgroundTransparency = 1
-toggle.Text = "🥚"
-toggle.TextScaled = true
-toggle.Parent = main
+setreadonly(mt, false)
 
--- ម៉ឺនុយរង្វង់មូល
-local menu = Instance.new("Frame")
-menu.Size = UDim2.new(0, 220, 0, 220)
-menu.Position = UDim2.new(0, 90, 0.5, -110)
-menu.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-menuChild.BackgroundTransparency = 0.1
-menu.BorderSizePixel = 0
-menu.Visible = false
-menu.Parent = gui
-Instance.new("UICor("ner", menu).CornerRadius = UDim.new(1, 0)
+mt.__index = newcclosure(function(self, key)
+    if self == Humanoid then
+        if key == "WalkSpeed" then
+            return originalWalkSpeed
+        elseif key == "JumpPower" then
+            return originalJumpPower
+        end
+    end
+    if self == HumanoidRootPart and key == "CFrame" then
+        return originalCFrame
+    end
+    return oldIndex(self, key)
+end)
 
-toggle.MouseButton1Click:Connect(function()
-    menu.Visible = not menu.Visible
-Humanend)
+mt.__newindex = newcclosure(function(self, key, value)
+    if self == Humanoid then
+        if key == "WalkSpeed" or key == "JumpPower" then
+            -- ទទួលយកតម្លៃថ្មីតែក្នុង local ដោយមិនឱ្យ anti-cheat ឃើញ
+            oldNewIndex(self, key, value)
+            return
+        end
+    end
+    return oldNewIndex(self, key, value)
+end)
 
--- ===== FUNCTIONS =====
-local function makeBtn(text, yPos, callback)
-    local b = Instance.new("TextButton")
-    b.Size =oid UDim2.new(0, 180, 0, 30)
-    b.Position = UDim2.new(0.5, -90, 0, yPos)
-    b.BackgroundRootColor3 = Color3.fromRGB(40, 40, 40)
-    b.TextColor3 = Color3.new(1, 1, 1Part)
-    b.Text = text
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 14
-    b.Parent = menu
-    Instance.new("UICorner", b).Corner")
-Radius = UDim.new(0, 6)
-    b.MouseButton1Click:Connect(callback)
-    return b
-end
+setreadonly(mt, true)
 
--- Steal Egg +    Teleport
-local function stealEgg()
-    local char = LP.Character
-    if not char then return end
-    local hrp = char:FindFirst if not hrp then return end
+-- ============================================================
+-- TELEPORT និង EGG STEAL
+-- ============================================================
 
-    -- ស្វែងរក Remote សម្រាប់ steal
-    for _, v in pairs(RS:GetDescendants()) do
-        if v:IsA("RemoteEvent") or v:IsA("RemoteFunction") then
-            local n = string.lower(v.Name)
-            if n:find("steal") or n:find("egg") or n:find("collect") then
-                pcall(function()
-                    if v:IsA("RemoteEvent") then
-                        v:FireServer()
-                    else
-                        v:InvokeServer()
-                    end
-                end)
+-- កំណត់ល្បឿនខ្ពស់បំផុត (នឹងត្រូវបានលាក់ដោយ bypass)
+pcall(function()
+    Humanoid.WalkSpeed = 9999
+    Humanoid.JumpPower = 9999
+    Humanoid.UseJumpPower = true
+end)
+
+-- មុខងារស្វែងរក egg ទាំងអស់
+local function getAllEggs()
+    local eggs = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local name = string.lower(obj.Name)
+            if string.find(name, "egg") then
+                table.insert(eggs, obj)
             end
         end
     end
-
-    if TELEPORT_ON_STEAL then
-        hrp.CFrame = CFrame.new(FARM_POS)
-    end
+    return eggs
 end
 
--- Speed
-local function setSpeed(val)
-    local char = LP.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum.WalkSpeed = val
-        hum.JumpPower = val
-        hum.JumpHeight = val
+-- មុខងារលួច egg ពីចម្ងាយ
+local function stealEgg(egg)
+    local targetPart
+    if egg:IsA("BasePart") then
+        targetPart = egg
+    elseif egg:IsA("Model") then
+        targetPart = egg:FindFirstChildWhichIsA("BasePart")
     end
+    if not targetPart then return end
+
+    -- Teleport ដោយបន្ថែម offset តូចដើម្បីកាត់បន្ថយ detection
+    local offset = Vector3.new(
+        math.random(-2, 2),
+        math.random(0, 1),
+        math.random(-2, 2)
+    )
+    
+    pcall(function()
+        HumanoidRootPart.Velocity = Vector3.zero
+        HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+        HumanoidRootPart.CFrame = targetPart.CFrame + offset
+    end)
+    
+    task.wait(0.03)
+
+    -- ប្រើ proximity prompt ប្រសិនបើមាន
+    for _, prompt in pairs(targetPart:GetChildren()) do
+        if prompt:IsA("ProximityPrompt") then
+            pcall(function()
+                fireproximityprompt(prompt)
+            end)
+        end
+    end
+
+    -- ប្រើ firetouchinterest សម្រាប់ egg ដែលត្រូវការ touch
+    pcall(function()
+        firetouchinterest(HumanoidRootPart, targetPart, 0)
+        task.wait(0.01)
+        firetouchinterest(HumanoidRootPart, targetPart, 1)
+    end)
 end
 
--- ===== MENU BUTTONS =====
-makeBtn("🥚 Steal Egg + Teleport", 20, function()
-    stealEgg()
-end)
-
-makeBtn("⚡ Speed 1B", 60, function()
-    SPEED_VALUE = 1e9
-    setSpeed(SPEED_VALUE)
-end)
-
-makeBtn("⚡ Speed 1Qa", 100, function()
-    SPEED_VALUE = 1e15
-    setSpeed(SPEED_VALUE)
-end)
-
-makeBtn("❌ Close", 150, function()
-    menu.Visible = false
-end)
-
--- ===== AUTO LOOP =====
-spawn(function()
-    while task.wait(0.5) do
+-- រង្វិលជាប់ពេលលួច egg ទាំងអស់
+RunService.Heartbeat:Connect(function()
+    local eggs = getAllEggs()
+    for _, egg in pairs(eggs) do
         pcall(function()
-            local char = LP.Character
-            if char and char:FindFirstChildOfClass("Humanoid") then
-                char.Humanoid.WalkSpeed = SPEED_VALUE
-            end
+            stealEgg(egg)
         end)
     end
 end)
 
-LP.CharacterAdded:Connect(function(char)
-    task.wait(2)
-    setSpeed(SPEED_VALUE)
-end)
-
-print("[Seraph] Steal An Egg loaded")
+-- រក្សាល្បឿនខ្ពស់ (តម្លៃពិតនឹងត្រូវលាក់ដោយ bypass)
+while task.wait(0.1) do
+    if Humanoid and Humanoid.Parent then
+        pcall(function()
+            Humanoid.WalkSpeed = 9999
+            Humanoid.JumpPower = 9999
+        end)
+    else
+        Character = LocalPlayer.Character
+        if Character then
+            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+            Humanoid = Character:WaitForChild("Humanoid")
+        end
+    end
+end
