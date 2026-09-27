@@ -1,10 +1,13 @@
--- palofsc: NhazX - v59 SIMPLE TP
--- មានតែ 2 ប៊ូតុង: TP និង SetHome
--- ចុច TP → teleport ទៅ SafeZone ភ្លាម គ្មានស្លាប់
+-- palofsc: NhazX - v60 FINAL
+-- ដោះស្រាយ: teleport ទៅវិញទៅមក + មិនបាន egg + ស្លាប់
+-- ប្រើ CFrame + NetworkOwner + រង់ចាំ server
 
-print("[NhazX v59] Loading...")
+print("[NhazX v60] Loading...")
 
 local P = game:GetService("Players")
+local S = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+
 local LP = P.LocalPlayer
 local Ch = LP.Character or LP.CharacterAdded:Wait()
 local H = Ch:WaitForChild("HumanoidRootPart")
@@ -12,6 +15,10 @@ local Hu = Ch:WaitForChild("Humanoid")
 local PG = LP:WaitForChild("PlayerGui")
 
 local home = H.CFrame
+local tpCount = 0
+local lastTp = 0
+local cooldown = 2.5
+local isTeleporting = false
 
 print("[NhazX] Home saved: " .. tostring(home.Position))
 
@@ -25,7 +32,7 @@ g.Name = "NhazX"
 g.ResetOnSpawn = false
 g.Parent = PG
 
--- ប៊ូតុង N មូល
+-- ប៊ូតុង N
 local nBtn = Instance.new("TextButton")
 nBtn.Size = UDim2.new(0, 55, 0, 55)
 nBtn.Position = UDim2.new(0, 20, 0.3, 0)
@@ -55,7 +62,7 @@ local tps = Instance.new("UIStroke") tps.Color = Color3.fromRGB(0, 255, 150) tps
 
 -- Panel
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 175, 0, 130)
+f.Size = UDim2.new(0, 180, 0, 150)
 f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
@@ -66,22 +73,22 @@ local fs = Instance.new("UIStroke") fs.Color = Color3.fromRGB(0,255,200) fs.Thic
 
 local function mkBtn(txt, y, col)
     local x = Instance.new("TextButton")
-    x.Size = UDim2.new(0, 145, 0, 32)
+    x.Size = UDim2.new(0, 150, 0, 30)
     x.Position = UDim2.new(0, 15, 0, y)
     x.BackgroundColor3 = col or Color3.fromRGB(55,55,55)
     x.Text = txt
     x.TextColor3 = Color3.fromRGB(255,255,255)
     x.Font = Enum.Font.GothamBold
-    x.TextSize = 13
+    x.TextSize = 12
     x.BorderSizePixel = 0
     x.Parent = f
     local cc = Instance.new("UICorner") cc.CornerRadius = UDim.new(0,8) cc.Parent = x
     return x
 end
 
-local hB = mkBtn("Set Home (here)", 12, Color3.fromRGB(0, 100, 180))
-local tB = mkBtn("Teleport", 50, Color3.fromRGB(0, 180, 100))
-local stB = mkBtn("Home: SET", 88, Color3.fromRGB(40, 40, 40))
+local hB = mkBtn("Set Home (here)", 10, Color3.fromRGB(0, 100, 180))
+local tB = mkBtn("Teleport", 44, Color3.fromRGB(0, 180, 100))
+local stB = mkBtn("Ready", 78, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
 
 local credit = Instance.new("TextLabel")
@@ -112,7 +119,7 @@ nBtn.InputEnded:Connect(function(input)
     end
 end)
 
-game:GetService("UserInputService").InputChanged:Connect(function(input)
+UIS.InputChanged:Connect(function(input)
     if drag and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         local d = input.Position - dStart
         local nx = sPos.X.Offset + d.X
@@ -123,16 +130,49 @@ game:GetService("UserInputService").InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- TELEPORT FUNCTION
+-- TELEPORT FUNCTION - ជួសជុល
 -- ============================================================
 local function tpHome()
-    if not H or not H.Parent then return end
+    if not H or not H.Parent then return false end
+    if isTeleporting then return false end
+    
+    local now = tick()
+    if now - lastTp < cooldown then
+        stB.Text = "Cooldown: " .. math.floor(cooldown - (now - lastTp)) .. "s"
+        return false
+    end
+    
+    isTeleporting = true
+    lastTp = now
+    tpCount = tpCount + 1
+    
+    -- 1. ទាញ NetworkOwner
+    pcall(function()
+        if H:GetNetworkOwner() ~= LP then
+            H:SetNetworkOwner(LP)
+        end
+    end)
+    
+    -- 2. រង់ចាំ 0.1 វិនាទីឱ្យ server ទទួលស្គាល់ egg
+    task.wait(0.1)
+    
+    -- 3. Teleport
     pcall(function()
         H.Velocity = Vector3.zero
         H.AssemblyLinearVelocity = Vector3.zero
         H.CFrame = home
     end)
-    print("[NhazX] Teleported to home")
+    
+    -- 4. រង់ចាំបន្ថែម
+    task.wait(0.3)
+    
+    -- 5. Teleport ម្ដងទៀតដើម្បីធានា
+    pcall(function()
+        H.CFrame = home
+    end)
+    
+    isTeleporting = false
+    return true
 end
 
 -- ============================================================
@@ -142,30 +182,33 @@ nBtn.MouseButton1Click:Connect(function()
     f.Visible = not f.Visible
 end)
 
--- ប៊ូតុង TP ធំ
 tpBtn.MouseButton1Click:Connect(function()
-    tpHome()
-    tpBtn.Text = "OK!"
-    task.wait(0.5)
-    tpBtn.Text = "TP"
+    if tpHome() then
+        tpBtn.Text = "OK!"
+        task.wait(0.5)
+        tpBtn.Text = "TP"
+    else
+        tpBtn.Text = "WAIT"
+        task.wait(0.5)
+        tpBtn.Text = "TP"
+    end
 end)
 
--- ប៊ូតុង Teleport ក្នុង Panel
 tB.MouseButton1Click:Connect(function()
-    tpHome()
-    tB.Text = "Teleported!"
-    task.wait(0.8)
-    tB.Text = "Teleport"
+    if tpHome() then
+        tB.Text = "Teleported!"
+        task.wait(0.8)
+        tB.Text = "Teleport"
+    end
 end)
 
--- ប៊ូតុង Set Home
 hB.MouseButton1Click:Connect(function()
     home = H.CFrame
     stB.Text = "Home: " .. math.floor(home.Position.X) .. "," .. math.floor(home.Position.Z)
     hB.Text = "Saved!"
     task.wait(1)
     hB.Text = "Set Home (here)"
-    print("[NhazX] Home saved: " .. tostring(home.Position))
+    print("[NhazX] Home: " .. tostring(home.Position))
 end)
 
 -- Respawn
@@ -174,6 +217,7 @@ LP.CharacterAdded:Connect(function(c)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
+    isTeleporting = false
 end)
 
-print("[NhazX v59] Ready - TP + SetHome")
+print("[NhazX v60] Ready - TP + SetHome")
