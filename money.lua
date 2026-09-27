@@ -1,27 +1,31 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
 -- Credit: script by @nhaz_samurai
--- SAFE MODE: បញ្ចុះល្បឿន + Anti-Kick ស្រាល ជៀសវាងគាំង/ងាប់
--- Paste into executor
+-- Steal without chasing (instant) + Aimbot for far steal
+-- Paste into executor (Delta, Fluxus, Solara)
 
 local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+local Camera = workspace.CurrentCamera
 
 -- =========================================================
--- CONFIG (បញ្ចុះដើម្បីជៀស anti-cheat)
+-- CONFIG
 -- =========================================================
 local CONFIG = {
-    Speed       = 60,        -- ធ្លាប់ 250 → បញ្ចុះ 60 (safe)
-    Jump        = 60,        -- ធ្លាប់ 100 → បញ្ចុះ 60
-    SpeedOn     = false,
-    AutoTP      = false,     -- បិទ auto-teleport (បណ្តាលគាំង)
-    TPInterval  = 3,
-    AntiKick    = true,
+    AutoSteal     = false,   -- លួចស្វ័យប្រវត្តិ
+    InstantClaim  = true,    -- លួចភ្លាម មិនបាច់មេដេញ
+    Aimbot        = false,   -- វៃគេឆ្ងាយ
+    StealRange    = 9999,    -- ចម្ងាយគ្មានកំណត់
+    AimbotRange   = 5000,
+    AntiKick      = true,
+    LoopDelay     = 0.05,
 }
 
 -- =========================================================
--- ANTI-KICK (safe)
+-- ANTI-KICK
 -- =========================================================
 if CONFIG.AntiKick then
     pcall(function()
@@ -41,40 +45,167 @@ if CONFIG.AntiKick then
 end
 
 -- =========================================================
--- SPEED (smooth, មិនគាំង)
+-- REMOTE CACHE (steal/claim/take/grab/pickup)
 -- =========================================================
-local function applySpeed()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
+local StealRemotes = {}
+local function cacheRemotes()
+    StealRemotes = {}
+    local function scan(parent)
+        for _, r in pairs(parent:GetDescendants()) do
+            if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
+                local n = r.Name:lower()
+                if n:find("steal") or n:find("claim") or n:find("take")
+                or n:find("grab") or n:find("pickup") or n:find("own")
+                or n:find("place") or n:find("collect") or n:find("egg") then
+                    table.insert(StealRemotes, r)
+                end
+            end
+        end
+    end
+    scan(ReplicatedStorage)
+    scan(workspace)
+    scan(LocalPlayer)
+end
 
-    if CONFIG.SpeedOn then
-        hum.WalkSpeed = CONFIG.Speed
-        hum.JumpPower = CONFIG.Jump
-        hum.UseJumpPower = true
-    else
-        hum.WalkSpeed = 16
-        hum.JumpPower = 50
+-- =========================================================
+-- GET ALL EGGS (រករបស់ទាំងអស់)
+-- =========================================================
+local function getAllEggs()
+    local list = {}
+    for _, obj in pairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("Model") then
+            local n = obj.Name:lower()
+            if n:find("egg") or n:find("brainrot") or n:find("pet") then
+                table.insert(list, obj)
+            end
+        end
+    end
+    return list
+end
+
+-- =========================================================
+-- INSTANT CLAIM (លួចភ្លាម មិនបាច់មេដេញ)
+-- =========================================================
+local function instantClaim(obj)
+    if not obj then return end
+    local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
+    if not target then return end
+
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+    -- Fire remotes ទាំងអស់
+    for _, r in pairs(StealRemotes) do
+        pcall(function()
+            if r:IsA("RemoteEvent") then
+                r:FireServer(obj)
+                r:FireServer(target)
+                r:FireServer(obj, LocalPlayer)
+                r:FireServer(target, LocalPlayer.UserId)
+            else
+                r:InvokeServer(obj)
+                r:InvokeServer(target)
+            end
+        end)
+    end
+
+    -- បង្ខំ attribute
+    pcall(function()
+        obj:SetAttribute("Owner", LocalPlayer.UserId)
+        obj:SetAttribute("OwnerId", LocalPlayer.UserId)
+        obj:SetAttribute("Claimed", true)
+        target:SetAttribute("Owner", LocalPlayer.UserId)
+        target:SetAttribute("OwnerId", LocalPlayer.UserId)
+    end)
+
+    -- បង្ខំ Value objects
+    pcall(function()
+        for _, v in pairs(obj:GetDescendants()) do
+            local nm = v.Name:lower()
+            if v:IsA("ObjectValue") and (nm:find("owner") or nm:find("creator")) then
+                v.Value = LocalPlayer
+            elseif (v:IsA("IntValue") or v:IsA("NumberValue")) and (nm:find("owner") or nm:find("creator")) then
+                v.Value = LocalPlayer.UserId
+            elseif v:IsA("StringValue") and (nm:find("owner") or nm:find("creator")) then
+                v.Value = LocalPlayer.Name
+            end
+        end
+    end)
+
+    -- បញ្ចូល ProximityPrompt
+    pcall(function()
+        for _, p in pairs(obj:GetDescendants()) do
+            if p:IsA("ProximityPrompt") then
+                p:InputHoldBegin()
+                task.wait(0.01)
+                p:InputHoldEnd()
+            end
+        end
+    end)
+
+    -- ទូរទៅរករបស់ (បើ instant មិនកើត)
+    if CONFIG.InstantClaim then
+        pcall(function()
+            char.HumanoidRootPart.CFrame = target.CFrame + Vector3.new(0, 2, 0)
+        end)
     end
 end
 
--- កែរៀងរាល់ 1 វិនាទី (ជំនួស 0.2 → ជៀស rate-limit)
-task.spawn(function()
-    while task.wait(1) do
-        if CONFIG.SpeedOn then applySpeed() end
+-- =========================================================
+-- AIMBOT (វៃគេឆ្ងាយ - Teleport + Steal)
+-- =========================================================
+local function aimbotSteal(targetPlayer)
+    if not targetPlayer or targetPlayer == LocalPlayer then return end
+    local char = targetPlayer.Character
+    if not char then return end
+
+    local targetPart = nil
+    for _, obj in pairs(char:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("egg") or obj.Name:lower():find("brainrot")) then
+            targetPart = obj
+            break
+        end
     end
-end)
+    if not targetPart then
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("Model") or obj:IsA("BasePart") then
+                local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("OwnerId")
+                if owner and ((owner:IsA("ObjectValue") and owner.Value == targetPlayer)
+                or (owner:IsA("IntValue") and owner.Value == targetPlayer.UserId)) then
+                    targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
+                    break
+                end
+            end
+        end
+    end
 
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1.5)
-    applySpeed()
-end)
+    if targetPart then
+        instantClaim(targetPart)
+    else
+        local hrp = char:FindFirstChild("HumanoidRootPart")
+        if hrp then
+            LocalPlayer.Character.HumanoidRootPart.CFrame = hrp.CFrame + Vector3.new(0, 2, 0)
+        end
+    end
+end
 
 -- =========================================================
--- TREADMILL POSITION
+-- CLOSEST PLAYER AIMBOT
 -- =========================================================
-local treadmillPos = nil
+local function getClosestPlayer()
+    local closest, dist = nil, CONFIG.AimbotRange
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
+    local myPos = char.HumanoidRootPart.Position
+
+    for _, p in pairs(Players:GetPlayers()) do
+        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
+            local d = (p.Character.HumanoidRootPart.Position - myPos).Magnitude
+            if d < dist then closest, dist = p, d end
+        end
+    end
+    return closest
+end
 
 -- =========================================================
 -- DRAGGABLE
@@ -90,9 +221,7 @@ local function makeDraggable(frame, dragArea)
             dragStart = input.Position
             startPos = frame.Position
             input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    dragging = false
-                end
+                if input.UserInputState == Enum.UserInputState.End then dragging = false end
             end)
         end
     end)
@@ -110,7 +239,7 @@ local function makeDraggable(frame, dragArea)
 end
 
 -- =========================================================
--- GUI (safe, មិន animate)
+-- GUI
 -- =========================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "NhazX"
@@ -132,7 +261,7 @@ local MC = Instance.new("UICorner"); MC.CornerRadius = UDim.new(1, 0); MC.Parent
 local MS = Instance.new("UIStroke"); MS.Color = Color3.fromRGB(255, 255, 255); MS.Thickness = 2; MS.Parent = MiniBtn
 
 local Panel = Instance.new("Frame")
-Panel.Size = UDim2.new(0, 230, 0, 310)
+Panel.Size = UDim2.new(0, 240, 0, 360)
 Panel.Position = UDim2.new(0, 30, 0, 220)
 Panel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 Panel.BorderSizePixel = 0
@@ -145,10 +274,10 @@ local PS = Instance.new("UIStroke"); PS.Color = Color3.fromRGB(230, 40, 40); PS.
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 34)
 Title.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-Title.Text = "NhazX"
+Title.Text = "NhazX Steal+Aimbot"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
-Title.TextSize = 16
+Title.TextSize = 15
 Title.Active = true
 Title.Parent = Panel
 local TC = Instance.new("UICorner"); TC.CornerRadius = UDim.new(0, 10); TC.Parent = Title
@@ -179,38 +308,34 @@ local function mkBtn(text, y, cb)
     return b
 end
 
-local speedBtn
-speedBtn = mkBtn("SPEED: OFF (safe 60)", 58, function()
-    CONFIG.SpeedOn = not CONFIG.SpeedOn
-    speedBtn.Text = CONFIG.SpeedOn and "SPEED: ON (60)" or "SPEED: OFF (safe 60)"
-    speedBtn.BackgroundColor3 = CONFIG.SpeedOn and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
-    applySpeed()
+local stealBtn
+stealBtn = mkBtn("AUTO STEAL: OFF", 58, function()
+    CONFIG.AutoSteal = not CONFIG.AutoSteal
+    stealBtn.Text = "AUTO STEAL: " .. (CONFIG.AutoSteal and "ON" or "OFF")
+    stealBtn.BackgroundColor3 = CONFIG.AutoSteal and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
 end)
 
-mkBtn("SET CURRENT POS", 100, function()
-    local char = LocalPlayer.Character
-    if char and char:FindFirstChild("HumanoidRootPart") then
-        treadmillPos = char.HumanoidRootPart
-    end
+local aimBtn
+aimBtn = mkBtn("AIMBOT: OFF", 100, function()
+    CONFIG.Aimbot = not CONFIG.Aimbot
+    aimBtn.Text = "AIMBOT: " .. (CONFIG.Aimbot and "ON" or "OFF")
+    aimBtn.BackgroundColor3 = CONFIG.Aimbot and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
 end)
 
-mkBtn("TELEPORT BACK", 142, function()
-    if treadmillPos then
-        local char = LocalPlayer.Character
-        if char and char:FindFirstChild("HumanoidRootPart") then
-            char.HumanoidRootPart.CFrame = treadmillPos.CFrame + Vector3.new(0, 3, 0)
-        end
-    end
+mkBtn("STEAL ALL NOW", 142, function()
+    for _, e in ipairs(getAllEggs()) do instantClaim(e) end
 end)
 
-local autoTPBtn
-autoTPBtn = mkBtn("AUTO TP: OFF", 184, function()
-    CONFIG.AutoTP = not CONFIG.AutoTP
-    autoTPBtn.Text = "AUTO TP: " .. (CONFIG.AutoTP and "ON" or "OFF")
-    autoTPBtn.BackgroundColor3 = CONFIG.AutoTP and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
+mkBtn("AIMBOT NEAREST PLAYER", 184, function()
+    local p = getClosestPlayer()
+    if p then aimbotSteal(p) end
 end)
 
-mkBtn("CLOSE", 226, function()
+mkBtn("REFRESH REMOTES", 226, function()
+    cacheRemotes()
+end)
+
+mkBtn("CLOSE", 268, function()
     Panel.Visible = false
 end)
 
@@ -222,22 +347,36 @@ end)
 makeDraggable(MiniBtn)
 makeDraggable(Panel, Title)
 
--- Auto TP loop (បើបើក)
+-- =========================================================
+-- LOOPS
+-- =========================================================
+cacheRemotes()
+
+task.spawn(function() while task.wait(5) do cacheRemotes() end end)
+
+-- Auto Steal
 task.spawn(function()
-    while task.wait(CONFIG.TPInterval) do
-        if CONFIG.AutoTP and treadmillPos then
-            local char = LocalPlayer.Character
-            if char and char:FindFirstChild("HumanoidRootPart") then
-                char.HumanoidRootPart.CFrame = treadmillPos.CFrame + Vector3.new(0, 3, 0)
-            end
+    while task.wait(CONFIG.LoopDelay) do
+        if CONFIG.AutoSteal then
+            for _, e in ipairs(getAllEggs()) do instantClaim(e) end
+        end
+    end
+end)
+
+-- Aimbot loop
+task.spawn(function()
+    while task.wait(0.2) do
+        if CONFIG.Aimbot then
+            local p = getClosestPlayer()
+            if p then aimbotSteal(p) end
         end
     end
 end)
 
 pcall(function()
     game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "NhazX SAFE",
-        Text = "Loaded low-speed mode | @nhaz_samurai",
+        Title = "NhazX",
+        Text = "Steal + Aimbot loaded | @nhaz_samurai",
         Duration = 5
     })
 end)
