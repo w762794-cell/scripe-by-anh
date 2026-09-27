@@ -1,35 +1,40 @@
--- palofsc: TEST - Anti-cheat Teleport Check
--- ពិនិត្យថា game មាន anti-teleport ឬអត់
-
-print("[TEST] ចាប់ផ្ដើម 3 វិនាទី...")
-
+-- TEST BYPASS - ព្យាយាមច្រើនវិធី
 local LP = game:GetService("Players").LocalPlayer
 local Ch = LP.Character
-if not Ch then
-    Ch = LP.CharacterAdded:Wait()
-end
 local H = Ch:WaitForChild("HumanoidRootPart")
 
 local home = H.CFrame
-print("[TEST] Home saved: " .. tostring(home.Position))
+print("Home: " .. tostring(home.Position))
 
-task.wait(3)
-
-print("[TEST] Teleport ឡើងលើ 100 studs...")
-H.CFrame = home + Vector3.new(0, 100, 0)
-print("[TEST] Teleported to: " .. tostring(H.Position))
-
-task.wait(1)
-print("[TEST] Position ក្រោយ 1 វិនាទី: " .. tostring(H.Position))
+-- វិធី 1: NetworkOwner
+pcall(function()
+    if H:GetNetworkOwner() ~= LP then
+        H:SetNetworkOwner(LP)
+        print("[1] SetNetworkOwner OK")
+    end
+end)
 
 task.wait(2)
-print("[TEST] Position ក្រោយ 3 វិនាទី: " .. tostring(H.Position))
 
--- ប្រៀបធៀប
-local dist = (H.Position - (home.Position + Vector3.new(0, 100, 0))).Magnitude
-if dist < 10 then
-    print("[TEST] ✓ TELEPORT WORK - នៅខ្ពស់")
-else
-    print("[TEST] ✗ TELEPORT FAILED - ត្រូវបាន server ទាញមកវិញ")
-    print("[TEST] ចម្ងាយខុស: " .. tostring(dist))
+-- វិធី 2: CFrame + Velocity reset
+print("[2] Teleport with reset...")
+H.Velocity = Vector3.zero
+H.AssemblyLinearVelocity = Vector3.zero
+H.CFrame = home + Vector3.new(0, 50, 0)
+
+task.wait(0.5)
+print("Position: " .. tostring(H.Position))
+
+task.wait(1)
+print("Position 1.5s: " .. tostring(H.Position))
+
+task.wait(2)
+print("Position 3.5s: " .. tostring(H.Position))
+
+-- វិធី 3: បើនៅតែធ្លាក់ → ប្រើ loop teleport
+print("[3] Loop teleport test...")
+for i = 1, 10 do
+    H.CFrame = home + Vector3.new(0, 50, 0)
+    task.wait(0.05)
 end
+print("Position loop end: " .. tostring(H.Position))
