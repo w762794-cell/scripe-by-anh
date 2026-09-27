@@ -1,11 +1,10 @@
--- Delta Executor: Egg Steal + Teleport + Speed + Circle Menu
--- VERSION កែសម្រួល 100% ដំណើរការ
--- ប្រើ loadstring និងការពារ error គ្រប់ជំហាន
+-- Delta Executor: Egg Steal + Teleport + Speed 1000 + Circle Menu
+-- កែសម្រួល៖
+--   1. Speed = 1000 (លឿនខ្លាំង)
+--   2. Teleport ដំណើរការ 100% (បង្ខំ CFrame គ្រប់ frame)
+--   3. ចាប់យក egg បាន ទើប teleport
 
--- ============ ការពារ ERROR ទូទៅ ============
-if not game:IsLoaded() then
-    game.Loaded:Wait()
-end
+if not game:IsLoaded() then game.Loaded:Wait() end
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -16,22 +15,19 @@ local CoreGui = game:GetService("CoreGui")
 local LocalPlayer = Players.LocalPlayer
 
 -- ============ CONFIG ============
-local SAFEZONE_CFRAME = CFrame.new(0, 50, 0)
+local SAFEZONE_CFRAME = CFrame.new(0, 50, 0)   -- កែ ឬប្រើ Button រក្សាទុក
 local STEAL_DISTANCE = 15
 local TELEPORT_DELAY = 0.15
-local CHECK_INTERVAL = 0.1
-local SPEED_VALUE = 150
+local CHECK_INTERVAL = 0.05
+local SPEED_VALUE = 1000                        -- ល្បឿន 1000
 -- ================================
 
--- ============ WAIT FOR CHARACTER ============
 local Character, HumanoidRootPart, Humanoid
-
 local function updateCharacter()
     Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
     HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 10)
     Humanoid = Character:WaitForChild("Humanoid", 10)
 end
-
 updateCharacter()
 
 -- ============ STATE ============
@@ -41,6 +37,7 @@ local stolenEggs = {}
 local processingEggs = {}
 local eggRemotes = {}
 local running = true
+local teleportQueue = false  -- flag សម្រាប់ teleport loop
 
 -- ============ SCAN REMOTES ============
 local function scanRemotes()
@@ -82,21 +79,14 @@ local function trySteal(egg)
     local eggPart = egg:IsA("BasePart") and egg or egg:FindFirstChildWhichIsA("BasePart")
     if not eggPart then return false end
     
-    -- ProximityPrompt
     local prompt = egg:FindFirstChildOfClass("ProximityPrompt", true)
     if not prompt and eggPart then prompt = eggPart:FindFirstChildOfClass("ProximityPrompt") end
-    if prompt then
-        pcall(function() fireproximityprompt(prompt) end)
-    end
+    if prompt then pcall(function() fireproximityprompt(prompt) end) end
     
-    -- ClickDetector
     local clickDetector = egg:FindFirstChildOfClass("ClickDetector", true)
     if not clickDetector and eggPart then clickDetector = eggPart:FindFirstChildOfClass("ClickDetector") end
-    if clickDetector then
-        pcall(function() fireclickdetector(clickDetector) end)
-    end
+    if clickDetector then pcall(function() fireclickdetector(clickDetector) end) end
     
-    -- Remotes
     for _, remote in ipairs(eggRemotes) do
         pcall(function()
             if remote:IsA("RemoteEvent") then
@@ -109,7 +99,6 @@ local function trySteal(egg)
         end)
     end
     
-    -- Touch Interest
     if HumanoidRootPart then
         pcall(function()
             firetouchinterest(HumanoidRootPart, eggPart, 0)
@@ -121,15 +110,27 @@ local function trySteal(egg)
     return true
 end
 
--- ============ TELEPORT ============
-local function teleportToSafeZone()
-    if not HumanoidRootPart or not HumanoidRootPart.Parent then return end
-    pcall(function()
-        HumanoidRootPart.CFrame = SAFEZONE_CFRAME
-        HumanoidRootPart.Velocity = Vector3.zero
-        HumanoidRootPart.RotVelocity = Vector3.zero
-    end)
-end
+-- ============ TELEPORT LOOP (ដំណើរការ 100%) ============
+-- បង្ខំ CFrame គ្រប់ frame ដើម្បីកុំឱ្យ game reset position
+task.spawn(function()
+    while running do
+        if teleportQueue then
+            pcall(function()
+                if HumanoidRootPart and HumanoidRootPart.Parent then
+                    HumanoidRootPart.CFrame = SAFEZONE_CFRAME
+                    HumanoidRootPart.Velocity = Vector3.zero
+                    HumanoidRootPart.RotVelocity = Vector3.zero
+                    HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
+                    HumanoidRootPart.AssemblyAngularVelocity = Vector3.zero
+                    if Humanoid then
+                        Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+                    end
+                end
+            end)
+        end
+        task.wait()
+    end
+end)
 
 -- ============ PROCESS EGG ============
 local function processEgg(egg)
@@ -155,7 +156,11 @@ local function processEgg(egg)
     trySteal(egg)
     task.wait(TELEPORT_DELAY)
     stolenEggs[egg] = true
-    teleportToSafeZone()
+    
+    -- បើក teleport loop រយៈពេល 1 វិនាទី
+    teleportQueue = true
+    task.wait(1)
+    teleportQueue = false
     
     processingEggs[egg] = nil
 end
@@ -181,20 +186,22 @@ task.spawn(function()
     end
 end)
 
--- ============ SPEED LOOP ============
+-- ============ SPEED LOOP (1000) ============
 task.spawn(function()
     while running do
         pcall(function()
-            if speedEnabled and Humanoid and Humanoid.Parent then
-                Humanoid.WalkSpeed = SPEED_VALUE
-                Humanoid.JumpPower = 100
-                Humanoid.UseJumpPower = true
-            elseif Humanoid and Humanoid.Parent then
-                Humanoid.WalkSpeed = 16
-                Humanoid.JumpPower = 50
+            if Humanoid and Humanoid.Parent then
+                if speedEnabled then
+                    Humanoid.WalkSpeed = SPEED_VALUE
+                    Humanoid.JumpPower = 200
+                    Humanoid.UseJumpPower = true
+                else
+                    Humanoid.WalkSpeed = 16
+                    Humanoid.JumpPower = 50
+                end
             end
         end)
-        task.wait(0.1)
+        task.wait(0.05)  -- update ញឹកញាប់
     end
 end)
 
@@ -214,7 +221,6 @@ task.spawn(function()
 end)
 
 -- ============ GUI ============
--- លុប GUI ចាស់បើមាន
 pcall(function()
     if CoreGui:FindFirstChild("EggStealUI") then
         CoreGui.EggStealUI:Destroy()
@@ -228,7 +234,6 @@ ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 ScreenGui.IgnoreGuiInset = true
 ScreenGui.DisplayOrder = 999999
 
--- ព្យាយាម parent ចូល CoreGui
 local parented = false
 pcall(function()
     if gethui then
@@ -236,7 +241,6 @@ pcall(function()
         parented = true
     end
 end)
-
 if not parented then
     pcall(function()
         if syn and syn.protect_gui then
@@ -246,14 +250,12 @@ if not parented then
         end
     end)
 end
-
 if not parented then
     pcall(function()
         ScreenGui.Parent = CoreGui
         parented = true
     end)
 end
-
 if not parented then
     pcall(function()
         ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
@@ -284,7 +286,7 @@ CircleStroke.Color = Color3.fromRGB(255, 255, 255)
 CircleStroke.Thickness = 2
 CircleStroke.Parent = CircleBtn
 
--- ============ MAIN MENU FRAME ============
+-- ============ MAIN MENU ============
 local MainFrame = Instance.new("Frame")
 MainFrame.Name = "MainFrame"
 MainFrame.Size = UDim2.new(0, 240, 0, 270)
@@ -304,7 +306,6 @@ UIStroke.Color = Color3.fromRGB(0, 170, 255)
 UIStroke.Thickness = 2
 UIStroke.Parent = MainFrame
 
--- Title Bar
 local TitleBar = Instance.new("Frame")
 TitleBar.Name = "TitleBar"
 TitleBar.Size = UDim2.new(1, 0, 0, 32)
@@ -328,7 +329,6 @@ Title.Font = Enum.Font.GothamBold
 Title.TextXAlignment = Enum.TextXAlignment.Left
 Title.Parent = TitleBar
 
--- Close X
 local CloseBtn = Instance.new("TextButton")
 CloseBtn.Name = "CloseBtn"
 CloseBtn.Size = UDim2.new(0, 26, 0, 26)
@@ -345,7 +345,6 @@ local CloseCorner = Instance.new("UICorner")
 CloseCorner.CornerRadius = UDim.new(0, 6)
 CloseCorner.Parent = CloseBtn
 
--- Status Label
 local StatusLabel = Instance.new("TextLabel")
 StatusLabel.Name = "StatusLabel"
 StatusLabel.Size = UDim2.new(1, -20, 0, 22)
@@ -358,7 +357,6 @@ StatusLabel.Font = Enum.Font.GothamBold
 StatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 StatusLabel.Parent = MainFrame
 
--- Toggle Egg Button
 local ToggleBtn = Instance.new("TextButton")
 ToggleBtn.Name = "ToggleBtn"
 ToggleBtn.Size = UDim2.new(1, -20, 0, 36)
@@ -375,7 +373,6 @@ local BtnCorner = Instance.new("UICorner")
 BtnCorner.CornerRadius = UDim.new(0, 8)
 BtnCorner.Parent = ToggleBtn
 
--- Save Position Button
 local SavePosBtn = Instance.new("TextButton")
 SavePosBtn.Name = "SavePosBtn"
 SavePosBtn.Size = UDim2.new(1, -20, 0, 32)
@@ -392,7 +389,6 @@ local SavePosCorner = Instance.new("UICorner")
 SavePosCorner.CornerRadius = UDim.new(0, 8)
 SavePosCorner.Parent = SavePosBtn
 
--- Speed Status Label
 local SpeedStatusLabel = Instance.new("TextLabel")
 SpeedStatusLabel.Name = "SpeedStatusLabel"
 SpeedStatusLabel.Size = UDim2.new(1, -20, 0, 22)
@@ -405,14 +401,13 @@ SpeedStatusLabel.Font = Enum.Font.GothamBold
 SpeedStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 SpeedStatusLabel.Parent = MainFrame
 
--- Toggle Speed Button
 local SpeedBtn = Instance.new("TextButton")
 SpeedBtn.Name = "SpeedBtn"
 SpeedBtn.Size = UDim2.new(1, -20, 0, 36)
 SpeedBtn.Position = UDim2.new(0, 10, 0, 172)
 SpeedBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
 SpeedBtn.BorderSizePixel = 0
-SpeedBtn.Text = "បើក Speed"
+SpeedBtn.Text = "បើក Speed 1000"
 SpeedBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 SpeedBtn.TextSize = 14
 SpeedBtn.Font = Enum.Font.GothamBold
@@ -422,7 +417,6 @@ local SpeedBtnCorner = Instance.new("UICorner")
 SpeedBtnCorner.CornerRadius = UDim.new(0, 8)
 SpeedBtnCorner.Parent = SpeedBtn
 
--- Hint
 local HintLabel = Instance.new("TextLabel")
 HintLabel.Name = "HintLabel"
 HintLabel.Size = UDim2.new(1, -20, 0, 40)
@@ -450,14 +444,14 @@ local function updateUI()
     end
     
     if speedEnabled then
-        SpeedStatusLabel.Text = "Speed: បើក"
+        SpeedStatusLabel.Text = "Speed: បើក (" .. SPEED_VALUE .. ")"
         SpeedStatusLabel.TextColor3 = Color3.fromRGB(80, 255, 80)
         SpeedBtn.Text = "បិទ Speed"
         SpeedBtn.BackgroundColor3 = Color3.fromRGB(50, 180, 50)
     else
         SpeedStatusLabel.Text = "Speed: បិទ"
         SpeedStatusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-        SpeedBtn.Text = "បើក Speed"
+        SpeedBtn.Text = "បើក Speed " .. SPEED_VALUE
         SpeedBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
     end
     
@@ -470,37 +464,32 @@ end
 
 local function notify(title, text)
     pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = title,
-            Text = text,
-            Duration = 2
-        })
+        StarterGui:SetCore("SendNotification", {Title = title, Text = text, Duration = 2})
     end)
 end
 
 local function toggleEnabled()
     isEnabled = not isEnabled
     updateUI()
-    notify("Egg Steal", isEnabled and "បើកដំណើរការ" or "បិទដំណើរការ")
+    notify("Egg Steal", isEnabled and "បើក" or "បិទ")
 end
 
 local function toggleSpeed()
     speedEnabled = not speedEnabled
     updateUI()
-    notify("Speed", speedEnabled and ("បើក - ល្បឿន " .. SPEED_VALUE) or "បិទ")
+    notify("Speed", speedEnabled and ("បើក - " .. SPEED_VALUE) or "បិទ")
 end
 
 local function saveCurrentPosition()
     if HumanoidRootPart then
         local pos = HumanoidRootPart.Position
         SAFEZONE_CFRAME = CFrame.new(pos.X, pos.Y, pos.Z)
-        notify("SafeZone", string.format("បានរក្សាទុក: %.1f, %.1f, %.1f", pos.X, pos.Y, pos.Z))
+        notify("SafeZone", string.format("រក្សាទុក: %.0f, %.0f, %.0f", pos.X, pos.Y, pos.Z))
     end
 end
 
--- ============ SHOW / HIDE MENU ============
+-- ============ SHOW / HIDE ============
 local menuOpen = false
-
 local function openMenu()
     menuOpen = true
     MainFrame.Visible = true
@@ -509,12 +498,9 @@ local function openMenu()
         Size = UDim2.new(0, 240, 0, 270)
     }):Play()
 end
-
 local function closeMenu()
     menuOpen = false
-    local tween = TweenService:Create(MainFrame, TweenInfo.new(0.15, Enum.EasingStyle.Quad), {
-        Size = UDim2.new(0, 0, 0, 0)
-    })
+    local tween = TweenService:Create(MainFrame, TweenInfo.new(0.15), {Size = UDim2.new(0, 0, 0, 0)})
     tween:Play()
     tween.Completed:Connect(function()
         MainFrame.Visible = false
@@ -522,38 +508,29 @@ local function closeMenu()
     end)
 end
 
--- ============ EVENTS ============
-CircleBtn.MouseButton1Click:Connect(function()
-    if menuOpen then closeMenu() else openMenu() end
-end)
-
+CircleBtn.MouseButton1Click:Connect(function() if menuOpen then closeMenu() else openMenu() end end)
 CloseBtn.MouseButton1Click:Connect(closeMenu)
 ToggleBtn.MouseButton1Click:Connect(toggleEnabled)
 SpeedBtn.MouseButton1Click:Connect(toggleSpeed)
 SavePosBtn.MouseButton1Click:Connect(saveCurrentPosition)
 
--- ============ DRAG TITLE BAR ============
+-- ============ DRAG ============
 local dragging, dragInput, dragStart, startPos
-
 TitleBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         dragging = true
         dragStart = input.Position
         startPos = MainFrame.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
         end)
     end
 end)
-
 TitleBar.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
         dragInput = input
     end
 end)
-
 UserInputService.InputChanged:Connect(function(input)
     if input == dragInput and dragging then
         local delta = input.Position - dragStart
@@ -561,27 +538,22 @@ UserInputService.InputChanged:Connect(function(input)
     end
 end)
 
--- ============ DRAG CIRCLE BUTTON ============
-local circleDragging, circleDragStart, circleStartPos
-
+local cdrag, cdragStart, cstart
 CircleBtn.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        circleDragging = true
-        circleDragStart = input.Position
-        circleStartPos = CircleBtn.Position
+        cdrag = true
+        cdragStart = input.Position
+        cstart = CircleBtn.Position
         input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                circleDragging = false
-            end
+            if input.UserInputState == Enum.UserInputState.End then cdrag = false end
         end)
     end
 end)
-
 CircleBtn.InputChanged:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        if circleDragging then
-            local delta = input.Position - circleDragStart
-            CircleBtn.Position = UDim2.new(circleStartPos.X.Scale, circleStartPos.X.Offset + delta.X, circleStartPos.Y.Scale, circleStartPos.Y.Offset + delta.Y)
+        if cdrag then
+            local delta = input.Position - cdragStart
+            CircleBtn.Position = UDim2.new(cstart.X.Scale, cstart.X.Offset + delta.X, cstart.Y.Scale, cstart.Y.Offset + delta.Y)
         end
     end
 end)
