@@ -1,8 +1,9 @@
--- palofsc: NhazX Steal An Egg - v35
--- ពេលទៅ steal egg → មេវាដេញ → teleport មក Home ភ្លាម
--- មិនមែនពេលកាន់ egg ទេ
+-- palofsc: NhazX Steal An Egg - v37
+-- Teleport មុនពេលស្លាប់ + ជីវិតគ្មានកំណត់ (Godmode)
+-- ពេលមេដេញ → teleport Home ភ្លាម
+-- បើស្លាប់ → respawn ភ្លាម
 
-print("[NhazX v35] Loading...")
+print("[NhazX v37] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -17,8 +18,8 @@ local PG = LP:WaitForChild("PlayerGui")
 local on = false
 local home = H.CFrame
 local lastTp = 0
-local chaseDistance = 30     -- ចម្ងាយដែលចាត់ទុកថាដេញ
-local cooldown = 1.5          -- ចន្លោះពេលរវាង teleport
+local chaseRange = 300
+local cooldown = 0.3
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -72,9 +73,10 @@ end
 
 local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
-local ddB = mkBtn("Chase Range: 30", 46)
-local hB = mkBtn("Set Home (here)", 82, Color3.fromRGB(0, 130, 0))
-local stB = mkBtn("Status: OFF", 118, Color3.fromRGB(40, 40, 40))
+local gB = mkBtn("Godmode: ON", 46, Color3.fromRGB(0, 130, 0))
+local rdB = mkBtn("Range: 300", 82)
+local hB = mkBtn("Set Home (here)", 118, Color3.fromRGB(0, 100, 180))
+local stB = mkBtn("Status: OFF", 154, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
 
 -- អូស GUI
@@ -106,77 +108,165 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- ពិនិត្យថាមានសត្វដេញឬអត់
+-- GODMODE - មិនស្លាប់
 -- ============================================================
-local function checkChase()
-    if not H or not H.Parent then return false, nil end
+local godmode = true
+
+local function applyGodmode()
+    if not godmode then return end
+    if not Ch or not Ch.Parent then return end
     
-    local closest = nil
-    local closestDist = chaseDistance
+    pcall(function()
+        local hum = Ch:FindFirstChildOfClass("Humanoid")
+        if hum then
+            hum.MaxHealth = math.huge
+            hum.Health = math.huge
+        end
+        -- បិទ damage
+        for _, o in pairs(Ch:GetChildren()) do
+            if o:IsA("ForceField") then o:Destroy() end
+        end
+        -- បន្ថែម ForceField
+        if not Ch:FindFirstChild("NhazXShield") then
+            local ff = Instance.new("ForceField")
+            ff.Name = "NhazXShield"
+            ff.Visible = false
+            ff.Parent = Ch
+        end
+    end)
+end
+
+-- ============================================================
+-- TELEPORT FUNCTION
+-- ============================================================
+local function tpHome()
+    if not H or not H.Parent then return end
+    pcall(function()
+        H.Velocity = Vector3.zero
+        H.AssemblyLinearVelocity = Vector3.zero
+        H.CFrame = home
+    end)
+end
+
+-- ============================================================
+-- WATCHER - ចាប់សត្វដេញ
+-- ============================================================
+local function startWatcher()
+    if not H or not H.Parent then return end
     
-    for _, o in pairs(workspace:GetDescendants()) do
-        -- ពិនិត្យ Model ដែលមាន Humanoid (សត្វ/NPC)
-        if o:IsA("Model") and o ~= LP.Character then
-            local hum = o:FindFirstChildOfClass("Humanoid")
-            local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
-            
-            if hum and root then
-                local dist = (root.Position - H.Position).Magnitude
+    if H:FindFirstChild("NhazXWatcher") then
+        H.NhazXWatcher:Destroy()
+    end
+    
+    local region = Instance.new("Part")
+    region.Name = "NhazXWatcher"
+    region.Size = Vector3.new(chaseRange * 2, chaseRange * 2, chaseRange * 2)
+    region.Anchored = true
+    region.CanCollide = false
+    region.Transparency = 1
+    region.CanTouch = true
+    region.CanQuery = false
+    region.Parent = H
+    
+    region.Touched:Connect(function(hit)
+        if not on then return end
+        local t = tick()
+        if t - lastTp < cooldown then return end
+        
+        local model = hit:FindFirstAncestorOfClass("Model")
+        if not model or model == LP.Character then return end
+        
+        local hum = model:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        
+        -- បើជា player ផ្សេង → មិន teleport
+        for _, pl in pairs(P:GetPlayers()) do
+            if pl ~= LP and pl.Character == model then
+                return
+            end
+        end
+        
+        -- ជាសត្វ → teleport home
+        lastTp = t
+        stB.Text = "Chased: " .. model.Name
+        tpHome()
+        print("[NhazX] Chased by: " .. model.Name .. " -> Home")
+    end)
+end
+
+-- ============================================================
+-- LOOP ពិនិត្យជីវិត + សត្វជិត
+-- ============================================================
+spawn(function()
+    while task.wait(0.1) do
+        if not Ch or not Ch.Parent then continue end
+        
+        -- Godmode
+        if godmode then
+            pcall(function()
+                local hum = Ch:FindFirstChildOfClass("Humanoid")
+                if hum then
+                    if hum.Health < hum.MaxHealth then
+                        hum.Health = hum.MaxHealth
+                    end
+                end
+            end)
+        end
+        
+        if not on then continue end
+        if not H or not H.Parent then continue end
+        
+        -- ពិនិត្យសត្វនៅជិត
+        local closest = nil
+        local closestDist = chaseRange
+        
+        for _, o in pairs(workspace:GetDescendants()) do
+            if o:IsA("Model") and o ~= Ch then
+                local hum = o:FindFirstChildOfClass("Humanoid")
+                local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
                 
-                if dist < closestDist then
-                    -- ពិនិត្យថាកំពុងដេញ (កំពុងផ្លាស់ទី)
-                    local speed = hum.WalkSpeed
-                    if speed > 0 then
-                        closestDist = dist
-                        closest = o
+                if hum and root and hum.Health > 0 then
+                    local dist = (root.Position - H.Position).Magnitude
+                    if dist < closestDist then
+                        -- មិនមែន player
+                        local isPl = false
+                        for _, pl in pairs(P:GetPlayers()) do
+                            if pl.Character == o then isPl = true break end
+                        end
+                        if not isPl then
+                            closestDist = dist
+                            closest = o
+                        end
                     end
                 end
             end
         end
-    end
-    
-    return closest ~= nil, closest
-end
-
--- ============================================================
--- MAIN LOOP
--- ============================================================
-spawn(function()
-    while task.wait(0.2) do
-        if not on then continue end
-        if not H or not H.Parent then continue end
-
-        -- ពិនិត្យថាមានសត្វដេញ
-        local isChased, animal = checkChase()
-
-        if isChased then
+        
+        if closest then
             local t = tick()
             if t - lastTp > cooldown then
                 lastTp = t
-                
-                local name = animal and animal.Name or "?"
-                stB.Text = "Chased by: " .. name
-                
-                -- Teleport home ភ្លាម
-                pcall(function()
-                    H.Velocity = Vector3.zero
-                    H.AssemblyLinearVelocity = Vector3.zero
-                    H.CFrame = home
-                end)
-                
-                print("[NhazX] ត្រូវដេញដោយ: " .. name .. " → Teleport Home")
+                stB.Text = "Chased: " .. closest.Name
+                tpHome()
+                print("[NhazX] Chase: " .. closest.Name .. " at " .. math.floor(closestDist))
             end
-        else
-            stB.Text = "Status: Safe"
         end
     end
 end)
 
+-- Respawn ភ្លាម
 LP.CharacterAdded:Connect(function(c)
-    task.wait(1)
+    task.wait(0.5)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
+    applyGodmode()
+    -- Teleport ទៅ home ភ្លាមពេល respawn
+    if on then
+        task.wait(0.3)
+        tpHome()
+    end
+    if on then startWatcher() end
 end)
 
 -- ============================================================
@@ -191,21 +281,39 @@ oB.MouseButton1Click:Connect(function()
         oB.BackgroundColor3 = Color3.fromRGB(0,180,0)
         bs.Color = Color3.fromRGB(0,255,0)
         stB.Text = "Watching..."
+        applyGodmode()
+        startWatcher()
     else
         oB.Text = "OFF"
         oB.BackgroundColor3 = Color3.fromRGB(55,55,55)
         bs.Color = Color3.fromRGB(0,255,200)
         stB.Text = "Status: OFF"
+        if H:FindFirstChild("NhazXWatcher") then
+            H.NhazXWatcher:Destroy()
+        end
     end
 end)
 
-ddB.MouseButton1Click:Connect(function()
-    -- ប្តូរចម្ងាយ
-    if chaseDistance == 30 then chaseDistance = 15
-    elseif chaseDistance == 15 then chaseDistance = 50
-    elseif chaseDistance == 50 then chaseDistance = 100
-    else chaseDistance = 30 end
-    ddB.Text = "Chase Range: " .. chaseDistance
+gB.MouseButton1Click:Connect(function()
+    godmode = not godmode
+    if godmode then
+        gB.Text = "Godmode: ON"
+        gB.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
+        applyGodmode()
+    else
+        gB.Text = "Godmode: OFF"
+        gB.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+    end
+end)
+
+rdB.MouseButton1Click:Connect(function()
+    if chaseRange == 300 then chaseRange = 100
+    elseif chaseRange == 100 then chaseRange = 200
+    elseif chaseRange == 200 then chaseRange = 300
+    elseif chaseRange == 300 then chaseRange = 500
+    else chaseRange = 300 end
+    rdB.Text = "Range: " .. chaseRange
+    if on then startWatcher() end
 end)
 
 hB.MouseButton1Click:Connect(function()
@@ -213,7 +321,8 @@ hB.MouseButton1Click:Connect(function()
     hB.Text = "Saved!"
     task.wait(1)
     hB.Text = "Set Home (here)"
-    print("[NhazX] New home: " .. tostring(home.Position))
+    print("[NhazX] Home: " .. tostring(home.Position))
 end)
 
-print("[NhazX v35] Ready | Chase Range: " .. chaseDistance)
+applyGodmode()
+print("[NhazX v37] Ready | Godmode + Chase Range: " .. chaseRange)
