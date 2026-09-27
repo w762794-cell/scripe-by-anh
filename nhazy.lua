@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v47 FINAL
--- Teleport ពេលកាន់ egg ប៉ុណ្ណោះ
--- ដោះស្រាយបញ្ហាស្លាប់ពេល teleport
+-- palofsc: NhazX Steal An Egg - v49
+-- ពេល steal egg បាន (egg ចូលដៃ) → teleport Home ភ្លាម
+-- តាមដានចំនួន Tool ក្នុង Character (ដៃ)
 
-print("[NhazX v47] Loading...")
+print("[NhazX v49] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -17,12 +17,10 @@ local PG = LP:WaitForChild("PlayerGui")
 local on = false
 local godmode = true
 local home = H.CFrame
-local homeY = home.Position.Y
 local lastTp = 0
-local cooldown = 2.5
-local lastCount = 0
+local cooldown = 1.0
 local tpCount = 0
-local baselineTools = {}
+local lastHandCount = 0
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -50,7 +48,7 @@ local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = 
 local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = b
 
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 185, 0, 240)
+f.Size = UDim2.new(0, 185, 0, 210)
 f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
@@ -80,7 +78,7 @@ local gB = mkBtn("Godmode: ON", 46, Color3.fromRGB(0, 130, 0))
 local hB = mkBtn("Set Home (here)", 82, Color3.fromRGB(0, 100, 180))
 local stB = mkBtn("Status: OFF", 118, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
-local infoB = mkBtn("Tools: 0", 154, Color3.fromRGB(30, 30, 30))
+local infoB = mkBtn("Hand: 0 | Backpack: 0", 154, Color3.fromRGB(30, 30, 30))
 infoB.TextSize = 10
 
 local credit = Instance.new("TextLabel")
@@ -143,9 +141,9 @@ local function applyGodmode()
 end
 
 -- ============================================================
--- រាប់ Tools
+-- រាប់ Tools ក្នុងដៃ + Backpack
 -- ============================================================
-local function countTools()
+local function countHand()
     local n = 0
     local c = LP.Character
     if c then
@@ -153,6 +151,11 @@ local function countTools()
             if o:IsA("Tool") then n = n + 1 end
         end
     end
+    return n
+end
+
+local function countBackpack()
+    local n = 0
     local bp = LP:FindFirstChild("Backpack")
     if bp then
         for _, o in pairs(bp:GetChildren()) do
@@ -178,7 +181,7 @@ end
 -- LOOP
 -- ============================================================
 spawn(function()
-    while task.wait(0.25) do
+    while task.wait(0.15) do
         if not Ch or not Ch.Parent then continue end
 
         if godmode then
@@ -193,32 +196,32 @@ spawn(function()
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        -- រាប់ Tools
-        local cnt = countTools()
-        infoB.Text = "Tools: " .. cnt
-        
-        -- Update baseline បើមិនទាន់
-        if cnt < lastCount then
-            -- បាត់ tool → update baseline
-            lastCount = cnt
-        end
+        -- រាប់ Hand + Backpack
+        local handCnt = countHand()
+        local bpCnt = countBackpack()
+        infoB.Text = "Hand: " .. handCnt .. " | Bag: " .. bpCnt
 
-        -- ពិនិត្យថាបាន egg ថ្មី
-        if cnt > lastCount then
+        -- ពិនិត្យថាចំនួនដៃកើនឡើង
+        if handCnt > lastHandCount then
             local t = tick()
             if t - lastTp > cooldown then
                 lastTp = t
                 tpCount = tpCount + 1
-                stB.Text = "TP #" .. tpCount .. " (Tools: " .. cnt .. ")"
+                stB.Text = "TP #" .. tpCount .. " (Hand: " .. handCnt .. ")"
                 
-                -- Teleport home
+                -- Teleport Home ភ្លាម
                 tpHome()
                 
-                print("[NhazX] #" .. tpCount .. " Tools: " .. lastCount .. " -> " .. cnt)
+                print("[NhazX] #" .. tpCount .. " Hand: " .. lastHandCount .. " -> " .. handCnt)
                 
-                -- Update baseline ក្រោយ teleport
-                task.wait(1)
-                lastCount = countTools()
+                -- Update baseline ក្រោយ 0.5s
+                task.wait(0.5)
+                lastHandCount = countHand()
+            end
+        else
+            -- Update baseline បើដៃថយចុះ
+            if handCnt < lastHandCount then
+                lastHandCount = handCnt
             end
         end
     end
@@ -231,7 +234,7 @@ LP.CharacterAdded:Connect(function(c)
     Hu = c:WaitForChild("Humanoid")
     applyGodmode()
     task.wait(0.5)
-    lastCount = countTools()
+    lastHandCount = countHand()
 end)
 
 -- ============================================================
@@ -247,7 +250,7 @@ oB.MouseButton1Click:Connect(function()
         bs.Color = Color3.fromRGB(0,255,0)
         stB.Text = "Watching..."
         tpCount = 0
-        lastCount = countTools()
+        lastHandCount = countHand()
         applyGodmode()
     else
         oB.Text = "OFF"
@@ -278,6 +281,5 @@ hB.MouseButton1Click:Connect(function()
 end)
 
 applyGodmode()
-lastCount = countTools()
-infoB.Text = "Tools: " .. lastCount
-print("[NhazX v47] Script By @nhaz_samurai")
+lastHandCount = countHand()
+print("[NhazX v49] Script By @nhaz_samurai")
