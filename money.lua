@@ -1,125 +1,80 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
--- GUI: NhazX | Credit: script by @nhaz_samurai
--- Money farm 100K per hit + Speed boost for treadmill
+-- Credit: script by @nhaz_samurai
+-- FIX: ចាប់ remote ពិតដោយ RemoteSpy + fire ត្រឹមត្រូវ
 -- Paste into executor (Delta, Fluxus, Solara, Synapse, etc.)
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- =========================================================
--- CONFIG / ការកំណត់
+-- CONFIG
 -- =========================================================
 local CONFIG = {
-    MoneyPerHit  = 100000,       -- 100K
-    AutoFarm     = false,
-    AutoSell     = false,
-    AutoCollect  = false,
-    FarmDelay    = 0.05,
-    AntiKick     = true,
-
-    SpeedEnabled = false,
-    WalkSpeed    = 200,
-    JumpEnabled  = false,
-    JumpPower    = 100,
+    MoneyPerHit = 100000,
+    AutoFarm    = false,
+    AntiKick    = true,
+    AutoSpy     = true,   -- ស្តាប់ remote ស្វ័យប្រវត្តិ
 }
 
 -- =========================================================
 -- ANTI-KICK
 -- =========================================================
-local function enableAntiKick()
+if CONFIG.AntiKick then
     local mt = getrawmetatable(game)
-    local oldNamecall = mt.__namecall
+    local old = mt.__namecall
     setreadonly(mt, false)
     mt.__namecall = newcclosure(function(self, ...)
         if getnamecallmethod() == "Kick" and self == LocalPlayer then
             return nil
+        end
+        return old(self, ...)
+    end)
+    setreadonly(mt, true)
+end
+
+-- =========================================================
+-- REMOTE SPY / ចាប់ឈ្មោះ remote ពិត
+-- =========================================================
+local CapturedRemotes = {}   -- [name] = {remote=..., args={...}}
+
+local function startSpy()
+    local mt = getrawmetatable(game)
+    local oldNamecall = mt.__namecall
+    setreadonly(mt, false)
+    mt.__namecall = newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        if (method == "FireServer" or method == "InvokeServer") and typeof(self) == "Instance" then
+            local args = {...}
+            local full = self:GetFullName()
+            CapturedRemotes[full] = {remote = self, args = args, method = method}
+            print("[NhazX Spy]", method, "->", full, "| args:", unpack and unpack(args) or table.unpack(args))
         end
         return oldNamecall(self, ...)
     end)
     setreadonly(mt, true)
 end
 
--- =========================================================
--- SPEED HACK / ល្បឿន
--- =========================================================
-local function applySpeed()
-    local char = LocalPlayer.Character
-    if not char then return end
-    local hum = char:FindFirstChildOfClass("Humanoid")
-    if not hum then return end
-
-    hum.WalkSpeed = CONFIG.SpeedEnabled and CONFIG.WalkSpeed or 16
-
-    if CONFIG.JumpEnabled then
-        hum.UseJumpPower = true
-        hum.JumpPower = CONFIG.JumpPower
-    else
-        hum.UseJumpPower = true
-        hum.JumpPower = 50
-    end
-end
-
-task.spawn(function()
-    while task.wait(0.5) do
-        if CONFIG.SpeedEnabled or CONFIG.JumpEnabled then
-            applySpeed()
-        end
-    end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    task.wait(1)
-    applySpeed()
-end)
+if CONFIG.AutoSpy then startSpy() end
 
 -- =========================================================
--- REMOTE CACHE / ចាប់ remote លុយ
--- =========================================================
-local MoneyRemotes = {}
-local function cacheRemotes()
-    MoneyRemotes = {}
-    local function scan(parent)
-        for _, r in pairs(parent:GetDescendants()) do
-            if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
-                local n = r.Name:lower()
-                if n:find("money") or n:find("cash") or n:find("coin")
-                or n:find("sell") or n:find("buy") or n:find("earn")
-                or n:find("reward") or n:find("collect") or n:find("income")
-                or n:find("claim") or n:find("give") or n:find("add")
-                or n:find("step") or n:find("walk") or n:find("treadmill")
-                or n:find("speed") or n:find("upgrade") then
-                    table.insert(MoneyRemotes, r)
-                end
-            end
-        end
-    end
-    scan(ReplicatedStorage)
-    scan(workspace)
-end
-
--- =========================================================
--- GET CURRENCY / រករបស់លុយ
+-- GET CURRENCY (leaderstats + Player + ReplicatedStorage)
 -- =========================================================
 local function getCurrency()
     local ls = LocalPlayer:FindFirstChild("leaderstats")
     if ls then
         for _, v in pairs(ls:GetChildren()) do
-            local n = v.Name:lower()
-            if n:find("money") or n:find("cash") or n:find("coin")
-            or n:find("balance") or n:find("dollar") or n:find("brainrot") then
-                return v
-            end
+            if v:IsA("IntValue") or v:IsA("NumberValue") then return v end
         end
     end
     for _, v in pairs(LocalPlayer:GetChildren()) do
-        if v:IsA("IntValue") or v:IsA("NumberValue") then
+        if (v:IsA("IntValue") or v:IsA("NumberValue")) then
             local n = v.Name:lower()
-            if n:find("money") or n:find("cash") or n:find("coin") or n:find("balance") then
+            if n:find("money") or n:find("cash") or n:find("coin")
+            or n:find("balance") or n:find("dollar") or n:find("egg") then
                 return v
             end
         end
@@ -128,61 +83,51 @@ local function getCurrency()
 end
 
 -- =========================================================
--- GIVE MONEY / បន្ថែមលុយ
+-- GIVE MONEY (client + fire captured remotes)
 -- =========================================================
 local function giveMoney(amount)
+    -- 1. កែ client value
     local cur = getCurrency()
-    if cur then
-        pcall(function() cur.Value = cur.Value + amount end)
-    end
+    if cur then pcall(function() cur.Value = cur.Value + amount end) end
 
-    for _, r in pairs(MoneyRemotes) do
+    -- 2. Fire remote ដែលចាប់បាន
+    for name, data in pairs(CapturedRemotes) do
+        local r, args, method = data.remote, data.args, data.method
         pcall(function()
-            if r:IsA("RemoteEvent") then
+            -- replay ជាមួយ args ដើម និងបន្ថែម amount
+            if method == "FireServer" then
+                r:FireServer(table.unpack(args))
                 r:FireServer(amount)
                 r:FireServer("add", amount)
-                r:FireServer("give", amount)
-                r:FireServer(LocalPlayer, amount)
-                r:FireServer("step", amount)
-                r:FireServer("walk", amount)
-                r:FireServer("earn", amount)
             else
+                r:InvokeServer(table.unpack(args))
                 r:InvokeServer(amount)
-                r:InvokeServer("add", amount)
             end
         end)
     end
-end
 
--- =========================================================
--- AUTO SELL / COLLECT
--- =========================================================
-local function autoSellAll()
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("Model") or obj:IsA("BasePart") then
-            local n = obj.Name:lower()
-            if n:find("egg") or n:find("brainrot") or n:find("pet") then
-                for _, r in pairs(MoneyRemotes) do
-                    pcall(function()
-                        if r:IsA("RemoteEvent") then r:FireServer("sell", obj) end
-                    end)
-                end
+    -- 3. Scan remote ឈ្មោះពាក់ព័ន្ធលុយ
+    for _, r in pairs(ReplicatedStorage:GetDescendants()) do
+        if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
+            local n = r.Name:lower()
+            if n:find("money") or n:find("cash") or n:find("coin")
+            or n:find("reward") or n:find("earn") or n:find("step")
+            or n:find("walk") or n:find("income") or n:find("collect") then
+                pcall(function()
+                    if r:IsA("RemoteEvent") then
+                        r:FireServer(amount)
+                        r:FireServer("add", amount)
+                    else
+                        r:InvokeServer(amount)
+                    end
+                end)
             end
         end
     end
 end
 
-local function autoCollect()
-    for _, r in pairs(MoneyRemotes) do
-        pcall(function()
-            if r:IsA("RemoteEvent") then r:FireServer("collect")
-            else r:InvokeServer("collect") end
-        end)
-    end
-end
-
 -- =========================================================
--- GUI BUILD
+-- GUI
 -- =========================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "NhazX"
@@ -190,12 +135,10 @@ ScreenGui.ResetOnSpawn = false
 ScreenGui.DisplayOrder = 999
 ScreenGui.Parent = PlayerGui
 
--- Round mini button (already visible in your screenshot)
 local MiniBtn = Instance.new("TextButton")
 MiniBtn.Size = UDim2.new(0, 50, 0, 50)
 MiniBtn.Position = UDim2.new(0, 30, 0, 150)
 MiniBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-MiniBtn.BorderSizePixel = 0
 MiniBtn.Text = "N"
 MiniBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 MiniBtn.Font = Enum.Font.GothamBold
@@ -204,12 +147,10 @@ MiniBtn.Active = true
 MiniBtn.Draggable = true
 MiniBtn.Parent = ScreenGui
 local MC = Instance.new("UICorner"); MC.CornerRadius = UDim.new(1, 0); MC.Parent = MiniBtn
-local MS = Instance.new("UIStroke"); MS.Color = Color3.fromRGB(255, 255, 255); MS.Thickness = 2; MS.Parent = MiniBtn
 
--- Main Frame
 local Main = Instance.new("Frame")
-Main.Size = UDim2.new(0, 260, 0, 430)
-Main.Position = UDim2.new(0, 30, 0, 210)
+Main.Size = UDim2.new(0, 270, 0, 460)
+Main.Position = UDim2.new(0, 30, 0, 200)
 Main.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 Main.BorderSizePixel = 0
 Main.Active = true
@@ -217,12 +158,11 @@ Main.Draggable = true
 Main.Visible = false
 Main.Parent = ScreenGui
 local UC = Instance.new("UICorner"); UC.CornerRadius = UDim.new(0, 10); UC.Parent = Main
-local ST = Instance.new("UIStroke"); ST.Color = Color3.fromRGB(255, 60, 60); ST.Thickness = 2; ST.Parent = Main
+local ST = Instance.new("UIStroke"); ST.Color = Color3.fromRGB(230, 40, 40); ST.Thickness = 2; ST.Parent = Main
 
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 35)
 Title.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-Title.BorderSizePixel = 0
 Title.Text = "NhazX | Money+Speed"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
@@ -234,7 +174,6 @@ local CloseBtn = Instance.new("TextButton")
 CloseBtn.Size = UDim2.new(0, 26, 0, 26)
 CloseBtn.Position = UDim2.new(1, -32, 0, 5)
 CloseBtn.BackgroundColor3 = Color3.fromRGB(120, 20, 20)
-CloseBtn.BorderSizePixel = 0
 CloseBtn.Text = "X"
 CloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 CloseBtn.Font = Enum.Font.GothamBold
@@ -253,196 +192,102 @@ Credit.Font = Enum.Font.Gotham
 Credit.TextSize = 11
 Credit.Parent = Main
 
-local Status = Instance.new("TextLabel")
-Status.Size = UDim2.new(1, -20, 0, 20)
-Status.Position = UDim2.new(0, 10, 0, 56)
-Status.BackgroundTransparency = 1
-Status.Text = "Balance: 0"
-Status.TextColor3 = Color3.fromRGB(120, 255, 120)
-Status.Font = Enum.Font.GothamBold
-Status.TextSize = 12
-Status.TextXAlignment = Enum.TextXAlignment.Left
-Status.Parent = Main
+local SpyLog = Instance.new("TextLabel")
+SpyLog.Size = UDim2.new(1, -20, 0, 40)
+SpyLog.Position = UDim2.new(0, 10, 0, 56)
+SpyLog.BackgroundColor3 = Color3.fromRGB(35, 35, 40)
+SpyLog.Text = "Spy: waiting..."
+SpyLog.TextColor3 = Color3.fromRGB(120, 255, 120)
+SpyLog.Font = Enum.Font.Code
+SpyLog.TextSize = 10
+SpyLog.TextWrapped = true
+SpyLog.TextXAlignment = Enum.TextXAlignment.Left
+SpyLog.Parent = Main
+local SLC = Instance.new("UICorner"); SLC.CornerRadius = UDim.new(0, 5); SLC.Parent = SpyLog
 
 local Scroll = Instance.new("ScrollingFrame")
-Scroll.Size = UDim2.new(1, -20, 1, -100)
-Scroll.Position = UDim2.new(0, 10, 0, 80)
+Scroll.Size = UDim2.new(1, -20, 1, -120)
+Scroll.Position = UDim2.new(0, 10, 0, 100)
 Scroll.BackgroundTransparency = 1
 Scroll.BorderSizePixel = 0
 Scroll.ScrollBarThickness = 4
-Scroll.CanvasSize = UDim2.new(0, 0, 0, 420)
+Scroll.CanvasSize = UDim2.new(0, 0, 0, 400)
 Scroll.Parent = Main
 local LL = Instance.new("UIListLayout"); LL.Padding = UDim.new(0, 6); LL.SortOrder = Enum.SortOrder.LayoutOrder; LL.Parent = Scroll
 
-local function createToggle(name, order, default, callback)
-    local Btn = Instance.new("TextButton")
-    Btn.Size = UDim2.new(1, -8, 0, 32)
-    Btn.BackgroundColor3 = default and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(45, 45, 50)
-    Btn.BorderSizePixel = 0
-    Btn.Text = name .. ": " .. (default and "ON" or "OFF")
-    Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-    Btn.Font = Enum.Font.GothamMedium
-    Btn.TextSize = 12
-    Btn.LayoutOrder = order
-    Btn.Parent = Scroll
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = Btn
-    local state = default
-    Btn.MouseButton1Click:Connect(function()
-        state = not state
-        Btn.Text = name .. ": " .. (state and "ON" or "OFF")
-        TweenService:Create(Btn, TweenInfo.new(0.15), {
-            BackgroundColor3 = state and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(45, 45, 50)
-        }):Play()
-        callback(state)
-    end)
+local function createBtn(text, color, order, cb)
+    local b = Instance.new("TextButton")
+    b.Size = UDim2.new(1, -8, 0, 36)
+    b.BackgroundColor3 = color
+    b.BorderSizePixel = 0
+    b.Text = text
+    b.TextColor3 = Color3.fromRGB(255, 255, 255)
+    b.Font = Enum.Font.GothamBold
+    b.TextSize = 13
+    b.LayoutOrder = order
+    b.Parent = Scroll
+    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
+    b.MouseButton1Click:Connect(cb)
+    return b
 end
 
-createToggle("Auto Farm 100K", 1, CONFIG.AutoFarm, function(v) CONFIG.AutoFarm = v end)
-createToggle("Auto Sell All", 2, CONFIG.AutoSell, function(v) CONFIG.AutoSell = v end)
-createToggle("Auto Collect", 3, CONFIG.AutoCollect, function(v) CONFIG.AutoCollect = v end)
-createToggle("Speed Hack (Treadmill)", 4, CONFIG.SpeedEnabled, function(v)
-    CONFIG.SpeedEnabled = v; applySpeed()
-end)
-createToggle("Jump Hack", 5, CONFIG.JumpEnabled, function(v)
-    CONFIG.JumpEnabled = v; applySpeed()
-end)
-createToggle("Anti Kick", 6, CONFIG.AntiKick, function(v) CONFIG.AntiKick = v end)
-
--- Slider Speed
-local SLabel = Instance.new("TextLabel")
-SLabel.Size = UDim2.new(1, -8, 0, 20)
-SLabel.BackgroundTransparency = 1
-SLabel.Text = "WalkSpeed: " .. CONFIG.WalkSpeed
-SLabel.TextColor3 = Color3.fromRGB(220, 220, 220)
-SLabel.Font = Enum.Font.Gotham
-SLabel.TextSize = 11
-SLabel.LayoutOrder = 7
-SLabel.Parent = Scroll
-
-local SSlider = Instance.new("TextButton")
-SSlider.Size = UDim2.new(1, -8, 0, 16)
-SSlider.BackgroundColor3 = Color3.fromRGB(60, 60, 70)
-SSlider.BorderSizePixel = 0
-SSlider.Text = ""
-SSlider.LayoutOrder = 8
-SSlider.Parent = Scroll
-local SSC = Instance.new("UICorner"); SSC.CornerRadius = UDim.new(0, 4); SSC.Parent = SSlider
-local SFill = Instance.new("Frame")
-SFill.Size = UDim2.new(0.37, 0, 1, 0)
-SFill.BackgroundColor3 = Color3.fromRGB(255, 60, 60)
-SFill.BorderSizePixel = 0
-SFill.Parent = SSlider
-local SFC = Instance.new("UICorner"); SFC.CornerRadius = UDim.new(0, 4); SFC.Parent = SFill
-
--- Button: Give 100K
-local GiveBtn = Instance.new("TextButton")
-GiveBtn.Size = UDim2.new(1, -8, 0, 42)
-GiveBtn.BackgroundColor3 = Color3.fromRGB(255, 200, 0)
-GiveBtn.BorderSizePixel = 0
-GiveBtn.Text = "GET 100K NOW"
-GiveBtn.TextColor3 = Color3.fromRGB(0, 0, 0)
-GiveBtn.Font = Enum.Font.GothamBold
-GiveBtn.TextSize = 14
-GiveBtn.LayoutOrder = 9
-GiveBtn.Parent = Scroll
-local GBC = Instance.new("UICorner"); GBC.CornerRadius = UDim.new(0, 6); GBC.Parent = GiveBtn
-
-GiveBtn.MouseButton1Click:Connect(function()
+createBtn("GET 100K NOW", Color3.fromRGB(255, 200, 0), 1, function()
     giveMoney(CONFIG.MoneyPerHit)
-    Status.Text = "Balance: " .. tostring(CONFIG.MoneyPerHit)
 end)
-
--- Button: Sell
-local SellBtn = Instance.new("TextButton")
-SellBtn.Size = UDim2.new(1, -8, 0, 34)
-SellBtn.BackgroundColor3 = Color3.fromRGB(200, 120, 30)
-SellBtn.BorderSizePixel = 0
-SellBtn.Text = "SELL ALL NOW"
-SellBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-SellBtn.Font = Enum.Font.GothamBold
-SellBtn.TextSize = 13
-SellBtn.LayoutOrder = 10
-SellBtn.Parent = Scroll
-local SBC = Instance.new("UICorner"); SBC.CornerRadius = UDim.new(0, 6); SBC.Parent = SellBtn
-
-SellBtn.MouseButton1Click:Connect(function()
-    autoSellAll(); autoCollect()
+createBtn("AUTO FARM 100K", Color3.fromRGB(40, 160, 60), 2, function()
+    CONFIG.AutoFarm = not CONFIG.AutoFarm
 end)
-
--- Slider events
-local dragSpeed = false
-SSlider.InputBegan:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        dragSpeed = true
+createBtn("SHOW CAPTURED REMOTES", Color3.fromRGB(60, 60, 120), 3, function()
+    local txt = ""
+    local i = 0
+    for name in pairs(CapturedRemotes) do
+        i = i + 1
+        txt = txt .. i .. ". " .. name:sub(-40) .. "\n"
+        if i >= 8 then break end
     end
+    if txt == "" then txt = "none captured yet" end
+    SpyLog.Text = txt
 end)
-UserInputService.InputEnded:Connect(function(i)
-    if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then
-        dragSpeed = false
-    end
+createBtn("CLEAR SPY", Color3.fromRGB(120, 40, 40), 4, function()
+    CapturedRemotes = {}
+    SpyLog.Text = "Spy: cleared"
 end)
-UserInputService.InputChanged:Connect(function(i)
-    if dragSpeed and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then
-        local rel = math.clamp((i.Position.X - SSlider.AbsolutePosition.X) / SSlider.AbsoluteSize.X, 0, 1)
-        SFill.Size = UDim2.new(rel, 0, 1, 0)
-        CONFIG.WalkSpeed = math.floor(rel * 500) + 16
-        SLabel.Text = "WalkSpeed: " .. CONFIG.WalkSpeed
-        applySpeed()
-    end
+createBtn("SPEED HACK ON/OFF", Color3.fromRGB(40, 100, 200), 5, function()
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then hum.WalkSpeed = (hum.WalkSpeed > 50) and 16 or 300 end
 end)
 
--- Toggle GUI
 local guiOpen = false
 local function toggleGUI()
     guiOpen = not guiOpen
-    if guiOpen then
-        Main.Visible = true
-        Main.Size = UDim2.new(0, 260, 0, 0)
-        TweenService:Create(Main, TweenInfo.new(0.25, Enum.EasingStyle.Quart), {
-            Size = UDim2.new(0, 260, 0, 430)
-        }):Play()
-        MiniBtn.BackgroundColor3 = Color3.fromRGB(40, 160, 60)
-        MiniBtn.Text = "−"
-    else
-        local t = TweenService:Create(Main, TweenInfo.new(0.2, Enum.EasingStyle.Quart), {
-            Size = UDim2.new(0, 260, 0, 0)
-        })
-        t:Play()
-        t.Completed:Connect(function() Main.Visible = false end)
-        MiniBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-        MiniBtn.Text = "N"
-    end
+    Main.Visible = guiOpen
+    MiniBtn.BackgroundColor3 = guiOpen and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(230, 40, 40)
 end
-
 MiniBtn.MouseButton1Click:Connect(toggleGUI)
-CloseBtn.MouseButton1Click:Connect(function() if guiOpen then toggleGUI() end end)
+CloseBtn.MouseButton1Click:Connect(toggleGUI)
 
 -- =========================================================
--- INIT
+-- FARM LOOP
 -- =========================================================
-if CONFIG.AntiKick then enableAntiKick() end
-cacheRemotes()
-applySpeed()
-
-task.spawn(function() while task.wait(5) do cacheRemotes() end end)
-
 task.spawn(function()
-    while task.wait(1) do
-        local cur = getCurrency()
-        if cur then Status.Text = "Balance: " .. tostring(cur.Value) end
+    while task.wait(0.1) do
+        if CONFIG.AutoFarm then giveMoney(CONFIG.MoneyPerHit) end
     end
 end)
 
+-- Update spy log រៀងរាល់ 1s
 task.spawn(function()
-    while task.wait(CONFIG.FarmDelay) do
-        if CONFIG.AutoFarm then giveMoney(CONFIG.MoneyPerHit) end
-        if CONFIG.AutoSell then autoSellAll() end
-        if CONFIG.AutoCollect then autoCollect() end
+    while task.wait(1) do
+        local count = 0
+        for _ in pairs(CapturedRemotes) do count = count + 1 end
+        if count > 0 then
+            SpyLog.Text = "Spy: captured " .. count .. " remotes"
+        end
     end
 end)
 
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "NhazX",
-    Text = "100K Farm + Speed | script by @nhaz_samurai",
+    Text = "Spy mode ON | script by @nhaz_samurai",
     Duration = 5
 })
