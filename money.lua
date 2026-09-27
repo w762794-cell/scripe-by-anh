@@ -1,13 +1,15 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
 -- Credit: script by @nhaz_samurai
--- Simple autofarm treadmill + speed
+-- GUI អូសបាន (draggable) + Speed + Treadmill teleport
 -- Paste into executor (Delta, Fluxus, Solara)
 
 local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 
 -- =========================================================
--- SPEED (រត់លើ treadmill លឿន → +2 ច្រើន → លុយកើន)
+-- SPEED
 -- =========================================================
 local SPEED = 250
 
@@ -26,11 +28,9 @@ task.spawn(function()
 end)
 
 -- =========================================================
--- AUTO REJOIN TREADMILL (ត្រឡប់ទៅ treadmill វិញ)
+-- FIND TREADMILL
 -- =========================================================
 local treadmillPos = nil
-
--- រក treadmill ក្នុង workspace
 for _, obj in pairs(workspace:GetDescendants()) do
     if obj:IsA("BasePart") then
         local n = obj.Name:lower()
@@ -41,17 +41,6 @@ for _, obj in pairs(workspace:GetDescendants()) do
     end
 end
 
--- បើរកមិនឃើញ តាមឈ្មោះ → រកតាម part ដែលនៅក្រោមជើង
-if not treadmillPos then
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") and obj.Size.Y < 3 and obj.Size.X > 5 then
-            treadmillPos = obj
-            break
-        end
-    end
-end
-
--- Teleport ទៅ treadmill រៀងរាល់ 2 វិនាទី (ការពាររអិលចេញ)
 if treadmillPos then
     task.spawn(function()
         while task.wait(2) do
@@ -64,47 +53,90 @@ if treadmillPos then
 end
 
 -- =========================================================
--- GUI (តូច សាមញ្ញ)
+-- DRAGGABLE FUNCTION (អូស GUI បាន)
+-- =========================================================
+local function makeDraggable(frame, dragArea)
+    dragArea = dragArea or frame
+    local dragging, dragStart, startPos
+
+    dragArea.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1
+        or input.UserInputType == Enum.UserInputType.Touch then
+            dragging = true
+            dragStart = input.Position
+            startPos = frame.Position
+            input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End then
+                    dragging = false
+                end
+            end)
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+        or input.UserInputType == Enum.UserInputType.Touch) then
+            local delta = input.Position - dragStart
+            frame.Position = UDim2.new(
+                startPos.X.Scale, startPos.X.Offset + delta.X,
+                startPos.Y.Scale, startPos.Y.Offset + delta.Y
+            )
+        end
+    end)
+end
+
+-- =========================================================
+-- GUI BUILD
 -- =========================================================
 local ScreenGui = Instance.new("ScreenGui")
 ScreenGui.Name = "NhazX"
 ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+ScreenGui.DisplayOrder = 999
+ScreenGui.Parent = PlayerGui
 
-local Btn = Instance.new("TextButton")
-Btn.Size = UDim2.new(0, 60, 0, 60)
-Btn.Position = UDim2.new(0, 30, 0, 150)
-Btn.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-Btn.Text = "N"
-Btn.TextColor3 = Color3.fromRGB(255, 255, 255)
-Btn.Font = Enum.Font.GothamBold
-Btn.TextSize = 26
-Btn.Draggable = true
-Btn.Parent = ScreenGui
-local C = Instance.new("UICorner"); C.CornerRadius = UDim.new(1, 0); C.Parent = Btn
+-- Mini round button (អូសបាន)
+local MiniBtn = Instance.new("TextButton")
+MiniBtn.Size = UDim2.new(0, 55, 0, 55)
+MiniBtn.Position = UDim2.new(0, 30, 0, 150)
+MiniBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
+MiniBtn.BorderSizePixel = 0
+MiniBtn.Text = "N"
+MiniBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+MiniBtn.Font = Enum.Font.GothamBold
+MiniBtn.TextSize = 24
+MiniBtn.Active = true
+MiniBtn.Parent = ScreenGui
+local MC = Instance.new("UICorner"); MC.CornerRadius = UDim.new(1, 0); MC.Parent = MiniBtn
+local MS = Instance.new("UIStroke"); MS.Color = Color3.fromRGB(255, 255, 255); MS.Thickness = 2; MS.Parent = MiniBtn
 
+-- Main Panel (អូសបាន)
 local Panel = Instance.new("Frame")
-Panel.Size = UDim2.new(0, 220, 0, 260)
+Panel.Size = UDim2.new(0, 230, 0, 300)
 Panel.Position = UDim2.new(0, 30, 0, 220)
 Panel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
+Panel.BorderSizePixel = 0
 Panel.Visible = false
-Panel.Draggable = true
+Panel.Active = true
 Panel.Parent = ScreenGui
 local PC = Instance.new("UICorner"); PC.CornerRadius = UDim.new(0, 10); PC.Parent = Panel
+local PS = Instance.new("UIStroke"); PS.Color = Color3.fromRGB(230, 40, 40); PS.Thickness = 2; PS.Parent = Panel
 
+-- Title bar (អូសតាម title)
 local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 32)
+Title.Size = UDim2.new(1, 0, 0, 34)
 Title.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
+Title.BorderSizePixel = 0
 Title.Text = "NhazX"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 16
+Title.Active = true
 Title.Parent = Panel
 local TC = Instance.new("UICorner"); TC.CornerRadius = UDim.new(0, 10); TC.Parent = Title
 
 local Credit = Instance.new("TextLabel")
 Credit.Size = UDim2.new(1, 0, 0, 16)
-Credit.Position = UDim2.new(0, 0, 0, 32)
+Credit.Position = UDim2.new(0, 0, 0, 34)
 Credit.BackgroundTransparency = 1
 Credit.Text = "script by @nhaz_samurai"
 Credit.TextColor3 = Color3.fromRGB(180, 180, 180)
@@ -117,6 +149,7 @@ local function mkBtn(text, y, cb)
     b.Size = UDim2.new(1, -20, 0, 36)
     b.Position = UDim2.new(0, 10, 0, y)
     b.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
+    b.BorderSizePixel = 0
     b.Text = text
     b.TextColor3 = Color3.fromRGB(255, 255, 255)
     b.Font = Enum.Font.GothamBold
@@ -128,17 +161,17 @@ local function mkBtn(text, y, cb)
 end
 
 local speedBtn
-speedBtn = mkBtn("SPEED: ON", 60, function()
+speedBtn = mkBtn("SPEED: ON (250)", 60, function()
     if SPEED > 20 then
         SPEED = 16
-        speedBtn.Text = "SPEED: OFF"
+        speedBtn.Text = "SPEED: OFF (16)"
     else
         SPEED = 250
-        speedBtn.Text = "SPEED: ON"
+        speedBtn.Text = "SPEED: ON (250)"
     end
 end)
 
-local tpBtn = mkBtn("TELEPORT TREADMILL", 105, function()
+mkBtn("TELEPORT TREADMILL", 105, function()
     if treadmillPos then
         local char = LocalPlayer.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
@@ -159,17 +192,32 @@ mkBtn("FIND TREADMILL", 150, function()
     end
 end)
 
-mkBtn("CLOSE", 195, function()
+mkBtn("JUMP POWER 100", 195, function()
+    local char = LocalPlayer.Character
+    if char then
+        local hum = char:FindFirstChildOfClass("Humanoid")
+        if hum then hum.JumpPower = 100; hum.UseJumpPower = true end
+    end
+end)
+
+mkBtn("CLOSE", 240, function()
     Panel.Visible = false
 end)
 
--- Toggle
-Btn.MouseButton1Click:Connect(function()
+-- Toggle panel
+MiniBtn.MouseButton1Click:Connect(function()
     Panel.Visible = not Panel.Visible
+    MiniBtn.BackgroundColor3 = Panel.Visible and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(230, 40, 40)
 end)
+
+-- =========================================================
+-- ធ្វើឲ្យអូសបាន
+-- =========================================================
+makeDraggable(MiniBtn)                  -- អូសរូបមូល
+makeDraggable(Panel, Title)             -- អូសតាម title bar
 
 game:GetService("StarterGui"):SetCore("SendNotification", {
     Title = "NhazX",
-    Text = "Speed + Treadmill | @nhaz_samurai",
+    Text = "Draggable GUI | @nhaz_samurai",
     Duration = 5
 })
