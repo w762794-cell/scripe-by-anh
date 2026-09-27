@@ -1,46 +1,32 @@
--- palofsc: Delta Roblox Steal An Egg script v6 - Stable Edition
--- Screen ធម្មតា 100% (មិនប៉ះពាល់ camera)
--- Auto steal ចូល inventory ដោយផ្ទាល់ Players (មិនបាច់រត់ទៅ safezone)
--- Compatible 27.09.2026 anti-cheat
+-- palofsc: Delta Roblox Steal An Egg script v7 - Fixed
+-- ដោះស្រាយបញ្ហា script មិនចេញ / error ពេលចាប់ផ្ដើម
+-- លុប bypass ដែលបង្ក error ក្នុង Delta
+-- ប្រើ pcall គ្រប់កន្លែងដើម្បីការពារ crash
 
-local Players = game:GetService.Local("Players")
+-- ============================================================
+-- SERVICES
+-- ============================================================
+local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-Playerlocal CoreGui = game:GetService("CoreGui")
+local CoreGui = game:GetService("CoreGui")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local LocalPlayer =
-local Camera = workspace.CurrentCamera
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-local Humanoid = Character:WaitForChild("Humanoid")
+local LocalPlayer = Players.LocalPlayer
 
--- ============================================================
- Human-- ANTI-CHEAT BYPASS (ស្រាល)
--- ============================================================
-local originalWalkSpeed = Humanoid.WalkoidSpeed
-local originalJumpPower =.JumpPower
+-- រង់ចាំ character
+local Character = LocalPlayer.Character
+if not Character then
+    Character = LocalPlayer.CharacterAdded:Wait()
+end
 
-local mt = getrawmetatable(game)
-local oldIndex = mt.__index
-local oldNewIndex = mt.__newindex
-setreadonly(mt, false)
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart", 10)
+local Humanoid = Character:WaitForChild("Humanoid", 10)
 
-mt.__index = newcclosure(function(self, key)
-    if self == Humanoid then
-        if key == "WalkSpeed" then return originalWalkSpeed end
-        if key == "JumpPower" then return originalJumpPower end
-    end
-    return oldIndex(self, key)
-end)
-
-mt.__newindex = newcclosure(function(self, key, value)
-    if self == Humanoid and (key == "WalkSpeed" or key == "JumpPower") then
-        oldNewIndex(self, key, value)
-        return
-    end
-    return oldNewIndex(self, key, value)
-end)
-setreadonly(mt, true)
+if not HumanoidRootPart or not Humanoid then
+    warn("មិនអាចរកឃើញ Character")
+    return
+end
 
 -- ============================================================
 -- អថេរ
@@ -50,17 +36,23 @@ local autoCollect = false
 local currentSpeed = 1000
 local speedPresets = {1000, 9000, 10000, 40000, 170000, 700000, 2500000, 17000000, 700000000}
 local lastCollectTime = 0
-local collectInterval = 0.25
+local collectInterval = 0.3
 local eggCache = {}
 local lastScan = 0
-local scanInterval = 0.8
+local scanInterval = 1.0
 
 -- ============================================================
 -- GUI
 -- ============================================================
+pcall(function()
+    local existing = CoreGui:FindFirstChild("EggStealMenu")
+    if existing then existing:Destroy() end
+end)
+
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "EggStealMenu"
 screenGui.ResetOnSpawn = false
+screenGui.IgnoreGuiInset = true
 screenGui.Parent = CoreGui
 
 local mainButton = Instance.new("TextButton")
@@ -72,6 +64,8 @@ mainButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 mainButton.TextScaled = true
 mainButton.Font = Enum.Font.GothamBold
 mainButton.BorderSizePixel = 0
+mainButton.Active = true
+mainButton.Draggable = true
 mainButton.Parent = screenGui
 
 local corner = Instance.new("UICorner")
@@ -196,113 +190,79 @@ mainButton.MouseButton1Click:Connect(function()
     panel.Visible = panelOpen
 end)
 
-local dragging, dragStart, startPos
-mainButton.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainButton.Position
-    end
-end)
-mainButton.InputEnded:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = false
-    end
-end)
-UserInputService.InputChanged:Connect(function(input)
-    if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        local delta = input.Position - dragStart
-        mainButton.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
-        panel.Position = UDim2.new(0, mainButton.Position.X.Offset + 65, 0, mainButton.Position.Y.Offset)
-    end
-end)
-
 -- ============================================================
 -- Egg Detection
 -- ============================================================
 local function refreshEggCache()
     eggCache = {}
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            local name = string.lower(obj.Name)
-            if string.find(name, "egg") and not string.find(name, "gui") then
-                table.insert(eggCache, obj)
-            end
-        elseif obj:IsA("Model") then
-            local name = string.lower(obj.Name)
-            if string.find(name, "egg") then
-                local part = obj:FindFirstChildWhichIsA("BasePart")
-                if part then
-                    table.insert(eggCache, part)
+    local ok, err = pcall(function()
+        for _, obj in pairs(workspace:GetDescendants()) do
+            if obj:IsA("BasePart") then
+                local name = string.lower(obj.Name)
+                if string.find(name, "egg") then
+                    table.insert(eggCache, obj)
+                end
+            elseif obj:IsA("Model") then
+                local name = string.lower(obj.Name)
+                if string.find(name, "egg") then
+                    local part = obj:FindFirstChildWhichIsA("BasePart")
+                    if part then
+                        table.insert(eggCache, part)
+                    end
                 end
             end
         end
+    end)
+    if not ok then
+        warn("Egg scan error: " .. tostring(err))
     end
 end
 
 -- ============================================================
--- STEAL LOGIC (ចូល inventory ដោយផ្ទាល់)
+-- STEAL LOGIC
 -- ============================================================
 local function stealEgg(targetPart)
     if not targetPart or not targetPart.Parent then return end
+    if not HumanoidRootPart or not HumanoidRootPart.Parent then return end
 
-    -- Teleport ទៅ egg
     pcall(function()
         HumanoidRootPart.CFrame = targetPart.CFrame + Vector3.new(0, 1, 0)
     end)
 
     task.wait(0.03)
 
-    -- វិធីសាស្ត្រទី 1: ProximityPrompt
-    for _, prompt in pairs(targetPart:GetChildren()) do
-        if prompt:IsA("ProximityPrompt") then
-            pcall(function()
+    -- ProximityPrompt
+    pcall(function()
+        for _, prompt in pairs(targetPart:GetChildren()) do
+            if prompt:IsA("ProximityPrompt") then
                 fireproximityprompt(prompt, 0)
-            end)
-        end
-    end
-
-    -- វិធីសាស្ត្រទី 2: ClickDetector
-    for _, detector in pairs(targetPart:GetChildren()) do
-        if detector:IsA("ClickDetector") then
-            pcall(function()
-                fireclickdetector(detector)
-            end)
-        end
-    end
-
-    -- វិធីសាស្ត្រទី 3: Touch interest
-    pcall(function()
-        firetouchinterest(HumanoidRootPart, targetPart, 0)
-        task.wait(0.01)
-        firetouchinterest(HumanoidRootPart, targetPart, 1)
-    end)
-
-    -- វិធីសាស្ត្រទី 4: Remote events (ស្វែងរក collect/steal/grab)
-    pcall(function()
-        for _, remote in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-            if remote:IsA("RemoteEvent") then
-                local rname = string.lower(remote.Name)
-                if string.find(rname, "collect") or string.find(rname, "steal") or 
-                   string.find(rname, "grab") or string.find(rname, "pickup") or 
-                   string.find(rname, "egg") then
-                    remote:FireServer(targetPart)
-                end
             end
         end
     end)
 
-    -- វិធីសាស្ត្រទី 5: ព្យាយាមប្រើ tool ប្រសិនបើមាន
+    -- ClickDetector
     pcall(function()
-        local backpack = LocalPlayer:FindFirstChild("Backpack")
-        if backpack then
-            for _, tool in pairs(backpack:GetChildren()) do
-                if tool:IsA("Tool") and string.find(string.lower(tool.Name), "steal") then
-                    tool.Parent = Character
-                    task.wait(0.02)
-                    tool:Activate()
-                    task.wait(0.02)
-                    tool.Parent = backpack
+        for _, detector in pairs(targetPart:GetChildren()) do
+            if detector:IsA("ClickDetector") then
+                fireclickdetector(detector)
+            end
+        end
+    end)
+
+    -- Touch interest
+    pcall(function()
+        firetouchinterest(HumanoidRootPart, targetPart, 0)
+        firetouchinterest(HumanoidRootPart, targetPart, 1)
+    end)
+
+    -- Remote events
+    pcall(function()
+        for _, remote in pairs(ReplicatedStorage:GetDescendants()) do
+            if remote:IsA("RemoteEvent") then
+                local rname = string.lower(remote.Name)
+                if string.find(rname, "collect") or string.find(rname, "steal") or 
+                   string.find(rname, "grab") or string.find(rname, "pickup") then
+                    remote:FireServer(targetPart)
                 end
             end
         end
@@ -310,7 +270,7 @@ local function stealEgg(targetPart)
 end
 
 -- ============================================================
--- RenderStepped
+-- Main Loop
 -- ============================================================
 RunService.RenderStepped:Connect(function(dt)
     if not isRunning then return end
@@ -318,7 +278,6 @@ RunService.RenderStepped:Connect(function(dt)
 
     pcall(function()
         Humanoid.WalkSpeed = currentSpeed
-        Humanoid.JumpPower = 50
     end)
 
     if autoCollect then
@@ -340,12 +299,11 @@ RunService.RenderStepped:Connect(function(dt)
     end
 end)
 
+-- រក្សាតួអង្គថ្មី
 LocalPlayer.CharacterAdded:Connect(function(char)
     Character = char
-    HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
-    Humanoid = char:WaitForChild("Humanoid")
-    originalWalkSpeed = Humanoid.WalkSpeed
-    originalJumpPower = Humanoid.JumpPower
+    HumanoidRootPart = char:WaitForChild("HumanoidRootPart", 10)
+    Humanoid = char:WaitForChild("Humanoid", 10)
 end)
 
 -- ============================================================
@@ -430,3 +388,5 @@ presetBtn.MouseButton1Click:Connect(function()
 end)
 
 updateSliderFromValue(currentSpeed)
+
+print("[EGG SCRIPT v7] ដំណើរការជោគជ័យ")
