@@ -1,7 +1,8 @@
--- palofsc: Delta Roblox egg steal script v4
--- ដោះស្រាយបញ្ហា screen នៅមួយកន្លែង ពេលល្បឿនខ្ពស់
--- ប្រើ CFrame teleport ជំនួស Velocity ដើម្បីឱ្យ camera និង character ធ្វើដំណើរជាមួយគ្នា
--- បន្ថែម camera update និង character network ownership
+-- palofsc: Delta Roblox egg steal script v5
+-- Screen ដូចលេងធម្មតា (camera follow ធម្មជាតិ)
+-- ល្បឿនកំណត់បានតាម slider
+-- កាត់បន្ថយ load ដើម្បីមិនគាំង phone
+-- Anti-cheat bypass 26.09.2026
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -15,11 +16,10 @@ local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
 
 -- ============================================================
--- ANTI-CHEAT BYPASS
+-- ANTI-CHEAT BYPASS (ស្រាល មិនធ្ងន់)
 -- ============================================================
 local originalWalkSpeed = Humanoid.WalkSpeed
 local originalJumpPower = Humanoid.JumpPower
-local originalCFrame = HumanoidRootPart.CFrame
 
 local mt = getrawmetatable(game)
 local oldIndex = mt.__index
@@ -31,9 +31,6 @@ mt.__index = newcclosure(function(self, key)
         if key == "WalkSpeed" then return originalWalkSpeed end
         if key == "JumpPower" then return originalJumpPower end
     end
-    if self == HumanoidRootPart and key == "CFrame" then
-        return originalCFrame
-    end
     return oldIndex(self, key)
 end)
 
@@ -42,20 +39,19 @@ mt.__newindex = newcclosure(function(self, key, value)
         oldNewIndex(self, key, value)
         return
     end
-    if self == HumanoidRootPart and key == "CFrame" then
-        originalCFrame = value
-    end
     return oldNewIndex(self, key, value)
 end)
 setreadonly(mt, true)
 
 -- ============================================================
--- អថេរស្ថានភាព
+-- អថេរ
 -- ============================================================
 local isRunning = false
 local autoCollect = false
 local currentSpeed = 1000
 local speedPresets = {1000, 5000, 10000, 50000, 100000, 500000, 1000000, 999999999999}
+local lastCollectTime = 0
+local collectInterval = 0.15  -- កាត់បន្ថយ frequency ដើម្បីមិនគាំង
 
 -- ============================================================
 -- GUI
@@ -220,19 +216,22 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- មុខងារលួច egg
+-- Egg detection (cache ដើម្បីមិន scan ញឹកញាប់)
 -- ============================================================
-local function getAllEggs()
-    local eggs = {}
+local eggCache = {}
+local lastScan = 0
+local scanInterval = 1.0
+
+local function refreshEggCache()
+    eggCache = {}
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("Model") then
             local name = string.lower(obj.Name)
             if string.find(name, "egg") then
-                table.insert(eggs, obj)
+                table.insert(eggCache, obj)
             end
         end
     end
-    return eggs
 end
 
 local function getEggPart(egg)
@@ -241,33 +240,15 @@ local function getEggPart(egg)
     return nil
 end
 
-local function stealEgg(egg)
-    local targetPart = getEggPart(egg)
-    if not targetPart then return end
+local function stealEgg(targetPart)
+    if not targetPart or not targetPart.Parent then return end
 
-    -- យក network ownership ដើម្បីឱ្យ client គ្រប់គ្រង character
+    -- Teleport ខ្លីៗ
     pcall(function()
-        if HumanoidRootPart:GetNetworkOwner() ~= LocalPlayer then
-            HumanoidRootPart:SetNetworkOwner(LocalPlayer)
-        end
-        if targetPart:CanSetNetworkOwnership() then
-            targetPart:SetNetworkOwner(LocalPlayer)
-        end
+        HumanoidRootPart.CFrame = targetPart.CFrame + Vector3.new(0, 1.5, 0)
     end)
 
-    -- Teleport ដោយ CFrame ផ្ទាល់ (មិនប្រើ Velocity)
-    pcall(function()
-        HumanoidRootPart.CFrame = targetPart.CFrame + Vector3.new(0, 2, 0)
-    end)
-
-    -- Update camera ភ្លាមៗដើម្បីកុំឱ្យ screen នៅមួយកន្លែង
-    pcall(function()
-        Camera.CFrame = CFrame.new(HumanoidRootPart.Position + Vector3.new(0, 10, 10), HumanoidRootPart.Position)
-        Camera.Focus = HumanoidRootPart.CFrame
-    end)
-
-    task.wait(0.02)
-
+    -- ProximityPrompt
     for _, prompt in pairs(targetPart:GetChildren()) do
         if prompt:IsA("ProximityPrompt") then
             pcall(function()
@@ -276,104 +257,60 @@ local function stealEgg(egg)
         end
     end
 
+    -- Touch
     pcall(function()
         firetouchinterest(HumanoidRootPart, targetPart, 0)
-        task.wait(0.01)
         firetouchinterest(HumanoidRootPart, targetPart, 1)
-    end)
-
-    pcall(function()
-        for _, remote in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
-            if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
-                local rname = string.lower(remote.Name)
-                if string.find(rname, "collect") or string.find(rname, "egg") or string.find(rname, "claim") then
-                    if remote:IsA("RemoteEvent") then
-                        remote:FireServer(targetPart)
-                    end
-                end
-            end
-        end
     end)
 end
 
 -- ============================================================
--- មុខងារសម្រាប់ល្បឿនខ្ពស់ (ដោះស្រាយ screen នៅមួយកន្លែង)
--- ============================================================
-local moveDirection = Vector3.zero
-
--- ចាប់យក input ពី player ដើម្បីធ្វើចលនា
-UserInputService.InputBegan:Connect(function(input, gp)
-    if gp then return end
-    if input.KeyCode == Enum.KeyCode.W then moveDirection = moveDirection + Vector3.new(0, 0, -1) end
-    if input.KeyCode == Enum.KeyCode.S then moveDirection = moveDirection + Vector3.new(0, 0, 1) end
-    if input.KeyCode == Enum.KeyCode.A then moveDirection = moveDirection + Vector3.new(-1, 0, 0) end
-    if input.KeyCode == Enum.KeyCode.D then moveDirection = moveDirection + Vector3.new(1, 0, 0) end
-end)
-
-UserInputService.InputEnded:Connect(function(input)
-    if input.KeyCode == Enum.KeyCode.W then moveDirection = moveDirection - Vector3.new(0, 0, -1) end
-    if input.KeyCode == Enum.KeyCode.S then moveDirection = moveDirection - Vector3.new(0, 0, 1) end
-    if input.KeyCode == Enum.KeyCode.A then moveDirection = moveDirection - Vector3.new(-1, 0, 0) end
-    if input.KeyCode == Enum.KeyCode.D then moveDirection = moveDirection - Vector3.new(1, 0, 0) end
-end)
-
--- ============================================================
--- RenderStepped សម្រាប់ធ្វើចលនារលូន និង camera follow
+-- RenderStepped - update ល្បឿន និង auto collect
 -- ============================================================
 RunService.RenderStepped:Connect(function(dt)
     if not isRunning then return end
-    if not HumanoidRootPart or not HumanoidRootPart.Parent then return end
+    if not Humanoid or not Humanoid.Parent then return end
 
-    -- កំណត់ WalkSpeed ខ្ពស់ (តម្លៃពិតលាក់ដោយ bypass)
+    -- កំណត់ WalkSpeed តាម slider (លេខពិតលាក់ដោយ bypass)
     pcall(function()
         Humanoid.WalkSpeed = currentSpeed
-        Humanoid.JumpPower = currentSpeed
-    end)
-
-    -- ធ្វើចលនាដោយ CFrame ផ្ទាល់ ដើម្បីឱ្យ camera ធ្វើតាម
-    if moveDirection.Magnitude > 0 then
-        local camCF = Camera.CFrame
-        local forward = camCF.LookVector
-        local right = camCF.RightVector
-        local moveVec = (forward * -moveDirection.Z + right * moveDirection.X).Unit
-        local distance = currentSpeed * dt
-        
-        pcall(function()
-            HumanoidRootPart.CFrame = HumanoidRootPart.CFrame + moveVec * distance
-        end)
-    end
-
-    -- Update camera ឱ្យធ្វើតាម character ជានិច្ច
-    pcall(function()
-        Camera.CFrame = Camera.CFrame + (HumanoidRootPart.Position - Camera.CFrame.Position)
-        Camera.Focus = HumanoidRootPart.CFrame
+        Humanoid.JumpPower = 50
     end)
 
     -- Auto collect
     if autoCollect then
-        local eggs = getAllEggs()
-        for _, egg in pairs(eggs) do
-            pcall(function()
-                stealEgg(egg)
-            end)
+        local now = tick()
+        if now - lastCollectTime >= collectInterval then
+            lastCollectTime = now
+
+            if now - lastScan >= scanInterval then
+                lastScan = now
+                refreshEggCache()
+            end
+
+            for _, egg in pairs(eggCache) do
+                pcall(function()
+                    local part = getEggPart(egg)
+                    if part then
+                        stealEgg(part)
+                    end
+                end)
+            end
         end
     end
 end)
 
--- រក្សាតួអង្គ
+-- រក្សាតួអង្គថ្មី
 LocalPlayer.CharacterAdded:Connect(function(char)
     Character = char
     HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
     Humanoid = char:WaitForChild("Humanoid")
     originalWalkSpeed = Humanoid.WalkSpeed
     originalJumpPower = Humanoid.JumpPower
-    pcall(function()
-        HumanoidRootPart:SetNetworkOwner(LocalPlayer)
-    end)
 end)
 
 -- ============================================================
--- មុខងារប៊ូតុង
+-- ប៊ូតុង
 -- ============================================================
 toggleBtn.MouseButton1Click:Connect(function()
     isRunning = not isRunning
@@ -381,9 +318,6 @@ toggleBtn.MouseButton1Click:Connect(function()
         toggleBtn.Text = "ON"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
         stroke.Color = Color3.fromRGB(0, 255, 0)
-        pcall(function()
-            HumanoidRootPart:SetNetworkOwner(LocalPlayer)
-        end)
     else
         toggleBtn.Text = "OFF"
         toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
@@ -396,6 +330,7 @@ autoBtn.MouseButton1Click:Connect(function()
     if autoCollect then
         autoBtn.Text = "Auto Collect: ON"
         autoBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
+        refreshEggCache()
     else
         autoBtn.Text = "Auto Collect: OFF"
         autoBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
