@@ -1,6 +1,6 @@
--- palofsc: NhazX v23 - Mobile Fix
--- ដោះស្រាយ: អូស GUI បាន (សម្រាប់ Mobile) + បន្ថែមប៊ូតុង ON/OFF Speed
--- រក្សា: Auto Steal -> ត្រឡប់ Home ភ្លាម
+-- palofsc: NhazX Steal a Egg - v24
+-- សម្រាប់ game "Steal a Egg"
+-- ពេលលួច egg បាន (កាន់ egg ក្នុងដៃ) → teleport មក Home ភ្លាម គ្មានថាឆ្ងាយប៉ុន្មាន
 
 local P = game:GetService("Players")
 local R = game:GetService("ReplicatedStorage")
@@ -15,19 +15,19 @@ local PG = LP:WaitForChild("PlayerGui")
 
 local on = false
 local auto = false
-local speedOn = false
 local spd = 100
-local spdList = {100, 200, 500, 1000, 2000}
-local si = 1
-local originalSpd = Hu.WalkSpeed
+local spdList = {60, 100, 200, 500, 1000}
+local si = 2
+local originalSpd = 60
 local home = H.CFrame
 local rem = {}
+local lastTeleport = 0
 
--- រក remote
+-- រក remotes សម្រាប់ steal
 for _, r in pairs(R:GetDescendants()) do
     if r:IsA("RemoteEvent") then
         local n = string.lower(r.Name)
-        if n:find("collect") or n:find("steal") or n:find("grab") or n:find("egg") or n:find("claim") or n:find("place") then
+        if n:find("collect") or n:find("steal") or n:find("grab") or n:find("pickup") or n:find("egg") or n:find("take") then
             table.insert(rem, r)
         end
     end
@@ -41,10 +41,9 @@ g.Name = "NhazX"
 g.ResetOnSpawn = false
 g.Parent = PG
 
--- ប៊ូតុងមូល N
 local b = Instance.new("TextButton")
 b.Size = UDim2.new(0, 55, 0, 55)
-b.Position = UDim2.new(0, 20, 0.3, 0) -- ដាក់ពាក់កណ្តាលអេក្រង់កុំឱ្យលិច
+b.Position = UDim2.new(0, 20, 0.3, 0)
 b.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 b.Text = "N"
 b.TextColor3 = Color3.fromRGB(0, 255, 200)
@@ -55,9 +54,8 @@ b.Parent = g
 local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = b
 local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = b
 
--- Panel
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 175, 0, 260)
+f.Size = UDim2.new(0, 180, 0, 280)
 f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
@@ -78,7 +76,7 @@ ti.Parent = f
 
 local function btn(txt, y, c)
     local x = Instance.new("TextButton")
-    x.Size = UDim2.new(0, 145, 0, 28)
+    x.Size = UDim2.new(0, 150, 0, 28)
     x.Position = UDim2.new(0, 15, 0, y)
     x.BackgroundColor3 = c or Color3.fromRGB(55,55,55)
     x.Text = txt
@@ -92,15 +90,16 @@ local function btn(txt, y, c)
 end
 
 local oB = btn("OFF", 34)
-local aB = btn("Auto: OFF", 68)
-local sB = btn("Speed Toggle: OFF", 102, Color3.fromRGB(80, 40, 40))
-local sdB = btn("Speed: 100", 136)
-local hB = btn("Set Home (here)", 170, Color3.fromRGB(0, 130, 0))
-local rB = btn("Remotes: "..#rem, 204, Color3.fromRGB(40, 40, 40))
-rB.TextSize = 10
+local autoB = btn("Auto Steal: OFF", 68)
+local spdB = btn("Speed: 100", 102)
+local homeB = btn("Set Home (here)", 136, Color3.fromRGB(0, 130, 0))
+local statusB = btn("Home: NOT SET", 170, Color3.fromRGB(40,40,40))
+statusB.TextSize = 11
+local remB = btn("Remotes: "..#rem, 204, Color3.fromRGB(40,40,40))
+remB.TextSize = 10
 
 -- ============================================================
--- មុខងារអូស GUI (សម្រាប់ Mobile និង PC)
+-- មុខងារអូស GUI
 -- ============================================================
 local dragging = false
 local dragStart = nil
@@ -126,78 +125,129 @@ UIS.InputChanged:Connect(function(input)
         local newX = startPos.X.Offset + delta.X
         local newY = startPos.Y.Offset + delta.Y
         b.Position = UDim2.new(startPos.X.Scale, newX, startPos.Y.Scale, newY)
-        -- ធ្វើឱ្យ panel ធ្វើតាមប៊ូតុង
         f.Position = UDim2.new(0, newX + 65, 0, newY)
     end
 end)
 
 -- ============================================================
--- STEAL LOGIC
+-- ពិនិត្យថាតើកាន់ egg ក្នុងដៃឬអត់
 -- ============================================================
-local function findEgg()
-    for _, o in pairs(workspace:GetDescendants()) do
-        if (o:IsA("BasePart") or o:IsA("Model")) and string.find(string.lower(o.Name), "egg") then
-            if o:IsA("BasePart") then return o end
-            local p = o:FindFirstChildWhichIsA("BasePart")
-            if p then return p end
+local function holdingEgg()
+    local char = LP.Character
+    if not char then return false end
+    for _, c in pairs(char:GetChildren()) do
+        if c:IsA("Tool") or c:IsA("Model") then
+            local n = string.lower(c.Name)
+            if n:find("egg") or n:find("steal") then
+                return true
+            end
         end
     end
-    return nil
+    -- ពិនិត្យក្នុង backpack ផង
+    local bp = LP:FindFirstChild("Backpack")
+    if bp then
+        for _, c in pairs(bp:GetChildren()) do
+            if c:IsA("Tool") then
+                local n = string.lower(c.Name)
+                if n:find("egg") then return true end
+            end
+        end
+    end
+    return false
 end
 
+-- ============================================================
+-- ពិនិត្យថាតើមាន egg នៅជិតឬអត់ (សម្រាប់ steal)
+-- ============================================================
+local function findNearbyEgg()
+    if not H or not H.Parent then return nil end
+    local closest = nil
+    local closestDist = 15 -- ចម្ងាយក្នុង studs
+    for _, o in pairs(workspace:GetDescendants()) do
+        if o:IsA("BasePart") and string.find(string.lower(o.Name), "egg") then
+            local dist = (o.Position - H.Position).Magnitude
+            if dist < closestDist then
+                closestDist = dist
+                closest = o
+            end
+        end
+    end
+    return closest
+end
+
+-- ============================================================
+-- STEAL FUNCTION
+-- ============================================================
 local function doSteal()
-    local e = findEgg()
-    if not e then return end
     if not H or not H.Parent then return end
-
-    local hp = home
-    pcall(function() H.CFrame = CFrame.new(e.Position + Vector3.new(0, 2, 0)) end)
-    task.wait(0.1)
-
-    for _, c in pairs(e:GetChildren()) do
+    
+    -- ពិនិត្យថាកាន់ egg រួចហើយ → teleport មក Home ភ្លាម
+    if holdingEgg() then
+        if home then
+            pcall(function()
+                H.CFrame = home
+            end)
+        end
+        return
+    end
+    
+    -- រក egg ជិត
+    local egg = findNearbyEgg()
+    if not egg then return end
+    
+    -- ព្យាយាមយក
+    for _, c in pairs(egg:GetChildren()) do
         if c:IsA("ProximityPrompt") then
             pcall(function() fireproximityprompt(c, 0) end)
         elseif c:IsA("ClickDetector") then
             pcall(function() fireclickdetector(c) end)
         end
     end
-
+    
     pcall(function()
-        firetouchinterest(H, e, 0)
+        firetouchinterest(H, egg, 0)
         task.wait(0.02)
-        firetouchinterest(H, e, 1)
+        firetouchinterest(H, egg, 1)
     end)
-
+    
     for _, r in pairs(rem) do
         pcall(function()
-            r:FireServer(e)
-            r:FireServer(e.Name)
+            r:FireServer(egg)
+            r:FireServer(egg.Name)
         end)
-    end
-
-    task.wait(0.15)
-    if hp then
-        pcall(function() H.CFrame = hp end)
     end
 end
 
-local last = 0
-
+-- ============================================================
+-- MAIN LOOP - ពិនិត្យរាល់ frame
+-- ============================================================
 S.Heartbeat:Connect(function()
     if not on then return end
-    
-    -- បើក Speed តែពេល speedOn បើក
-    if speedOn then
-        pcall(function() Hu.WalkSpeed = spd end)
-    else
-        pcall(function() Hu.WalkSpeed = originalSpd end)
-    end
 
+    -- Speed
+    pcall(function()
+        if Hu and Hu.Parent then
+            Hu.WalkSpeed = spd
+        end
+    end)
+
+    -- Auto Steal
     if auto then
-        local n = tick()
-        if n - last >= 1.5 then
-            last = n
-            pcall(doSteal)
+        pcall(doSteal)
+    end
+end)
+
+-- ============================================================
+-- ពិនិត្យរាល់ 0.3 វិនាទី - បើកាន់ egg → teleport home ភ្លាម
+-- ============================================================
+spawn(function()
+    while task.wait(0.3) do
+        if on and auto and home then
+            if holdingEgg() then
+                pcall(function()
+                    H.CFrame = home
+                end)
+            end
         end
     end
 end)
@@ -207,7 +257,6 @@ LP.CharacterAdded:Connect(function(c)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
-    originalSpd = Hu.WalkSpeed
 end)
 
 -- ============================================================
@@ -220,41 +269,28 @@ oB.MouseButton1Click:Connect(function()
     oB.Text = on and "ON" or "OFF"
     oB.BackgroundColor3 = on and Color3.fromRGB(0,180,0) or Color3.fromRGB(55,55,55)
     bs.Color = on and Color3.fromRGB(0,255,0) or Color3.fromRGB(0,255,200)
-    if not on then
-        pcall(function() Hu.WalkSpeed = originalSpd end)
-    end
 end)
 
-aB.MouseButton1Click:Connect(function()
+autoB.MouseButton1Click:Connect(function()
     auto = not auto
-    aB.Text = auto and "Auto: ON" or "Auto: OFF"
-    aB.BackgroundColor3 = auto and Color3.fromRGB(0,180,0) or Color3.fromRGB(55,55,55)
+    autoB.Text = auto and "Auto Steal: ON" or "Auto Steal: OFF"
+    autoB.BackgroundColor3 = auto and Color3.fromRGB(0,180,0) or Color3.fromRGB(55,55,55)
 end)
 
-sB.MouseButton1Click:Connect(function()
-    speedOn = not speedOn
-    if speedOn then
-        sB.Text = "Speed Toggle: ON"
-        sB.BackgroundColor3 = Color3.fromRGB(0, 180, 0)
-    else
-        sB.Text = "Speed Toggle: OFF"
-        sB.BackgroundColor3 = Color3.fromRGB(80, 40, 40)
-        pcall(function() Hu.WalkSpeed = originalSpd end)
-    end
-end)
-
-sdB.MouseButton1Click:Connect(function()
+spdB.MouseButton1Click:Connect(function()
     si = si + 1
     if si > #spdList then si = 1 end
     spd = spdList[si]
-    sdB.Text = "Speed: "..spd
+    spdB.Text = "Speed: "..spd
 end)
 
-hB.MouseButton1Click:Connect(function()
+homeB.MouseButton1Click:Connect(function()
     home = H.CFrame
-    hB.Text = "Home Saved!"
+    statusB.Text = "Home: SET"
+    statusB.TextColor3 = Color3.fromRGB(0, 255, 100)
+    homeB.Text = "Home Saved!"
     task.wait(1)
-    hB.Text = "Set Home (here)"
+    homeB.Text = "Set Home (here)"
 end)
 
-print("[NhazX v23] Remotes: "..#rem)
+print("[NhazX v24] Loaded | Remotes: "..#rem)
