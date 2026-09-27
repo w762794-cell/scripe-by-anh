@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v31
--- ពេល steal egg បាន → teleport មក Home ភ្លាម
--- មិន teleport ទៅ egg ទេ
+-- palofsc: NhazX Steal An Egg - v32
+-- ពេល steal egg (វាយបាន) → teleport មក Home ភ្លាម
+-- រាប់ Tool + Model ក្នុង Character + Backpack
 
-print("[NhazX v31] Loading...")
+print("[NhazX v32] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -18,12 +18,9 @@ local on = false
 local home = H.CFrame
 local lastTp = 0
 local baseline = 0
-local lastCount = 0
-local prevBackpack = 0
 
-print("[NhazX] Home saved: " .. tostring(home.Position))
+print("[NhazX] Home: " .. tostring(home.Position))
 
--- លុប GUI ចាស់
 if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
 
 -- ============================================================
@@ -75,7 +72,7 @@ end
 local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
 local hB = mkBtn("Set Home (here)", 46, Color3.fromRGB(0, 130, 0))
-local stB = mkBtn("Home: SET", 82, Color3.fromRGB(40, 40, 40))
+local stB = mkBtn("Baseline: 0", 82, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
 
 -- អូស GUI
@@ -107,52 +104,59 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- រាប់ចំនួន Tool ទាំង Character + Backpack
+-- រាប់ចំនួនវត្ថុក្នុង Character + Backpack
 -- ============================================================
-local function countAllTools()
-    local total = 0
+local function countItems()
+    local n = 0
     local c = LP.Character
     if c then
         for _, o in pairs(c:GetChildren()) do
-            if o:IsA("Tool") then total = total + 1 end
+            if o:IsA("Tool") or o:IsA("Model") then
+                n = n + 1
+            end
         end
     end
     local bp = LP:FindFirstChild("Backpack")
     if bp then
         for _, o in pairs(bp:GetChildren()) do
-            if o:IsA("Tool") then total = total + 1 end
+            if o:IsA("Tool") or o:IsA("Model") then
+                n = n + 1
+            end
         end
     end
-    return total
+    return n
 end
 
 -- ============================================================
--- MAIN LOOP - ពិនិត្យចំនួន Tool
+-- ពិនិត្យរាល់ 0.2 វិនាទី (មិនរាល់ frame កាត់បន្ថយ lag)
 -- ============================================================
-S.Heartbeat:Connect(function()
-    if not on then return end
-    if not H or not H.Parent then return end
-    
-    local cnt = countAllTools()
-    
-    -- បើចំនួនកើនឡើង → steal egg បាន → teleport home
-    if cnt > baseline then
-        local t = tick()
-        if t - lastTp > 1 then
-            lastTp = t
-            pcall(function()
-                H.Velocity = Vector3.zero
-                H.AssemblyLinearVelocity = Vector3.zero
-                H.CFrame = home
-            end)
-            stB.Text = "Teleported Home!"
-            print("[NhazX] Steal បាន → Teleport Home | Tools: " .. cnt)
+spawn(function()
+    while task.wait(0.2) do
+        if not on then continue end
+        if not H or not H.Parent then continue end
+        
+        local cnt = countItems()
+        
+        -- បើចំនួនកើន → steal egg បាន → teleport home
+        if cnt > baseline then
+            local t = tick()
+            if t - lastTp > 1 then
+                lastTp = t
+                pcall(function()
+                    H.Velocity = Vector3.zero
+                    H.AssemblyLinearVelocity = Vector3.zero
+                    H.CFrame = home
+                end)
+                stB.Text = "Teleported! (" .. cnt .. ")"
+                print("[NhazX] Steal បាន → Teleport Home | Items: " .. cnt)
+            end
         end
-    end
-    
-    -- ធ្វើឱ្យ baseline តាមចំនួនថ្មី ក្រោយ teleport
-    if tick() - lastTp > 1.5 then
-        baseline = cnt
+        
+        -- Update baseline ក្រោយ teleport
+        if tick() - lastTp > 1.5 then
+            baseline = cnt
+            stB.Text = "Baseline: " .. baseline
+        end
     end
 end)
 
@@ -161,8 +165,7 @@ LP.CharacterAdded:Connect(function(c)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
-    baseline = countAllTools()
-    stB.Text = "Home: SET"
+    baseline = countItems()
 end)
 
 -- ============================================================
@@ -176,25 +179,25 @@ oB.MouseButton1Click:Connect(function()
         oB.Text = "ON"
         oB.BackgroundColor3 = Color3.fromRGB(0,180,0)
         bs.Color = Color3.fromRGB(0,255,0)
-        baseline = countAllTools()
+        baseline = countItems()
         stB.Text = "Baseline: " .. baseline
-        print("[NhazX] ON | Baseline tools: " .. baseline)
+        print("[NhazX] ON | Baseline: " .. baseline)
     else
         oB.Text = "OFF"
         oB.BackgroundColor3 = Color3.fromRGB(55,55,55)
         bs.Color = Color3.fromRGB(0,255,200)
-        stB.Text = "Home: SET"
+        stB.Text = "Baseline: " .. baseline
     end
 end)
 
 hB.MouseButton1Click:Connect(function()
     home = H.CFrame
     hB.Text = "Saved!"
-    stB.Text = "Home: " .. math.floor(home.Position.X) .. "," .. math.floor(home.Position.Z)
     task.wait(1)
     hB.Text = "Set Home (here)"
     print("[NhazX] New home: " .. tostring(home.Position))
 end)
 
-baseline = countAllTools()
-print("[NhazX v31] Ready | Tools: " .. baseline)
+baseline = countItems()
+stB.Text = "Baseline: " .. baseline
+print("[NhazX v32] Ready | Items: " .. baseline)
