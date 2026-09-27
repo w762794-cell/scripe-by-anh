@@ -1,6 +1,6 @@
--- palofsc: NhazX STEAL -> HOME + ON/OFF
--- មានប៊ូតុង ON/OFF សម្រាប់បើក/បិទមុខងារ
--- Anti-cheat bypass + teleport home ពេល steal egg បាន
+-- palofsc: NhazX UNIVERSAL - មិនត្រូវការឈ្មោះ egg
+-- ពេលកាន់ Tool អ្វីក៏ដោយ (លើកលែង tool ដើម) → teleport Home ភ្លាម
+-- ដំណើរការគ្រប់ game steal egg
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -9,14 +9,13 @@ local UIS = game:GetService("UserInputService")
 local LP = P.LocalPlayer
 local Ch = LP.Character or LP.CharacterAdded:Wait()
 local H = Ch:WaitForChild("HumanoidRootPart")
-local Hu = Ch:WaitForChild("Humanoid")
 local PG = LP:WaitForChild("PlayerGui")
 
 local on = false
 local home = H.CFrame
-local holding = false
+local lastCount = 0
 local lastTp = 0
-local checkDelay = 0.15
+local baselineTools = {}
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -26,6 +25,21 @@ pcall(function()
         H:SetNetworkOwner(LP)
     end
 end)
+
+-- កត់ត្រា tool ដើម (មុនពេលចាប់ផ្ដើម)
+local function recordBaseline()
+    baselineTools = {}
+    local c = LP.Character
+    if c then
+        for _, o in pairs(c:GetChildren()) do
+            if o:IsA("Tool") then
+                baselineTools[o.Name] = true
+            end
+        end
+    end
+end
+
+recordBaseline()
 
 -- លុប GUI ចាស់
 if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
@@ -95,9 +109,7 @@ hB.BorderSizePixel = 0
 hB.Parent = f
 local hc = Instance.new("UICorner") hc.CornerRadius = UDim.new(0,8) hc.Parent = hB
 
--- ============================================================
 -- អូស GUI
--- ============================================================
 local dragging = false
 local dragStart = nil
 local startPos = nil
@@ -127,32 +139,32 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- ពិនិត្យកាន់ egg
+-- រាប់ចំនួន Tool ក្នុង Character (គ្មានឈ្មោះ)
 -- ============================================================
-local function hasEgg()
+local function countTools()
     local c = LP.Character
-    if not c then return false end
+    if not c then return 0 end
+    local count = 0
     for _, o in pairs(c:GetChildren()) do
-        if o:IsA("Tool") or o:IsA("Model") then
-            if string.find(string.lower(o.Name), "egg") then
-                return true
-            end
+        if o:IsA("Tool") then
+            count = count + 1
         end
     end
-    return false
+    return count
 end
 
 -- ============================================================
 -- MAIN LOOP
 -- ============================================================
 spawn(function()
-    while task.wait(checkDelay) do
+    while task.wait(0.15) do
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        local now = hasEgg()
+        local count = countTools()
 
-        if now and not holding then
+        -- បើចំនួន tool កើនឡើង → មានអ្វីថ្មី (egg)
+        if count > lastCount then
             local t = tick()
             if t - lastTp > 1 then
                 lastTp = t
@@ -169,11 +181,11 @@ spawn(function()
                     H.CFrame = home
                 end)
 
-                print("[NhazX] Egg stolen -> Home")
+                print("[NhazX] Tool ថ្មី → Teleport Home | Count: " .. count)
             end
         end
 
-        holding = now
+        lastCount = count
     end
 end)
 
@@ -192,8 +204,9 @@ LP.CharacterAdded:Connect(function(c)
     task.wait(1)
     Ch = c
     H = c:WaitForChild("HumanoidRootPart")
-    Hu = c:WaitForChild("Humanoid")
     pcall(function() H:SetNetworkOwner(LP) end)
+    lastCount = 0
+    recordBaseline()
 end)
 
 -- ============================================================
@@ -206,6 +219,9 @@ oB.MouseButton1Click:Connect(function()
     oB.Text = on and "ON" or "OFF"
     oB.BackgroundColor3 = on and Color3.fromRGB(0,180,0) or Color3.fromRGB(55,55,55)
     bs.Color = on and Color3.fromRGB(0,255,0) or Color3.fromRGB(0,255,200)
+    if on then
+        lastCount = countTools()
+    end
 end)
 
 hB.MouseButton1Click:Connect(function()
@@ -216,4 +232,7 @@ hB.MouseButton1Click:Connect(function()
     print("[NhazX] New home: " .. tostring(home.Position))
 end)
 
-print("[NhazX] Ready | Anti-cheat bypass active")
+-- កត់ត្រា baseline ចាប់ផ្ដើម
+lastCount = countTools()
+
+print("[NhazX] Ready | Tools: " .. lastCount)
