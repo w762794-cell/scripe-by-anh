@@ -1,8 +1,8 @@
--- palofsc: NhazX - v60 FINAL
--- ដោះស្រាយ: teleport ទៅវិញទៅមក + មិនបាន egg + ស្លាប់
--- ប្រើ CFrame + NetworkOwner + រង់ចាំ server
+-- palofsc: NhazX FIX TELEPORT - v61
+-- ជួសជុល teleport មិនឱ្យស្លាប់ + មិនបាត់ egg
+-- ប្រើ CFrame ជាន់ៗ (stealth teleport)
 
-print("[NhazX v60] Loading...")
+print("[NhazX v61] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -15,12 +15,11 @@ local Hu = Ch:WaitForChild("Humanoid")
 local PG = LP:WaitForChild("PlayerGui")
 
 local home = H.CFrame
-local tpCount = 0
-local lastTp = 0
-local cooldown = 2.5
 local isTeleporting = false
+local lastTp = 0
+local cooldown = 2.0
 
-print("[NhazX] Home saved: " .. tostring(home.Position))
+print("[NhazX] Home: " .. tostring(home.Position))
 
 if PG:FindFirstChild("NhazX") then PG.NhazX:Destroy() end
 
@@ -32,7 +31,6 @@ g.Name = "NhazX"
 g.ResetOnSpawn = false
 g.Parent = PG
 
--- ប៊ូតុង N
 local nBtn = Instance.new("TextButton")
 nBtn.Size = UDim2.new(0, 55, 0, 55)
 nBtn.Position = UDim2.new(0, 20, 0.3, 0)
@@ -46,7 +44,6 @@ nBtn.Parent = g
 local nc = Instance.new("UICorner") nc.CornerRadius = UDim.new(1,0) nc.Parent = nBtn
 local ns = Instance.new("UIStroke") ns.Color = Color3.fromRGB(0,255,200) ns.Thickness = 2 ns.Parent = nBtn
 
--- ប៊ូតុង TP ធំ
 local tpBtn = Instance.new("TextButton")
 tpBtn.Size = UDim2.new(0, 80, 0, 80)
 tpBtn.Position = UDim2.new(0.82, 0, 0.4, 0)
@@ -60,7 +57,6 @@ tpBtn.Parent = g
 local tpc = Instance.new("UICorner") tpc.CornerRadius = UDim.new(1,0) tpc.Parent = tpBtn
 local tps = Instance.new("UIStroke") tps.Color = Color3.fromRGB(0, 255, 150) tps.Thickness = 3 tps.Parent = tpBtn
 
--- Panel
 local f = Instance.new("Frame")
 f.Size = UDim2.new(0, 180, 0, 150)
 f.Position = UDim2.new(0, 85, 0.3, 0)
@@ -130,48 +126,61 @@ UIS.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- TELEPORT FUNCTION - ជួសជុល
+-- STEALTH TELEPORT - ជាន់ៗ មិនស្លាប់
 -- ============================================================
-local function tpHome()
+local function stealthTP(targetCF)
     if not H or not H.Parent then return false end
     if isTeleporting then return false end
-    
+
     local now = tick()
     if now - lastTp < cooldown then
-        stB.Text = "Cooldown: " .. math.floor(cooldown - (now - lastTp)) .. "s"
+        stB.Text = "Wait " .. math.ceil(cooldown - (now - lastTp)) .. "s"
         return false
     end
-    
+
     isTeleporting = true
     lastTp = now
-    tpCount = tpCount + 1
-    
+    stB.Text = "Teleporting..."
+
     -- 1. ទាញ NetworkOwner
     pcall(function()
         if H:GetNetworkOwner() ~= LP then
             H:SetNetworkOwner(LP)
         end
     end)
-    
-    -- 2. រង់ចាំ 0.1 វិនាទីឱ្យ server ទទួលស្គាល់ egg
+
+    -- 2. រង់ចាំឱ្យ server ទទួលស្គាល់ egg
+    task.wait(0.15)
+
+    -- 3. Teleport ជាន់ៗ (Stealth)
+    local startPos = H.Position
+    local targetPos = targetCF.Position
+    local steps = 8
+
+    for i = 1, steps do
+        local pos = startPos:Lerp(targetPos, i / steps)
+        pcall(function()
+            H.CFrame = CFrame.new(pos)
+        end)
+        task.wait(0.04)
+    end
+
+    -- 4. Teleport ចុងក្រោយ
     task.wait(0.1)
-    
-    -- 3. Teleport
     pcall(function()
         H.Velocity = Vector3.zero
         H.AssemblyLinearVelocity = Vector3.zero
-        H.CFrame = home
+        H.CFrame = targetCF
     end)
-    
-    -- 4. រង់ចាំបន្ថែម
-    task.wait(0.3)
-    
-    -- 5. Teleport ម្ដងទៀតដើម្បីធានា
+
+    -- 5. ធានាថាដល់
+    task.wait(0.2)
     pcall(function()
-        H.CFrame = home
+        H.CFrame = targetCF
     end)
-    
+
     isTeleporting = false
+    stB.Text = "Teleported!"
     return true
 end
 
@@ -183,7 +192,7 @@ nBtn.MouseButton1Click:Connect(function()
 end)
 
 tpBtn.MouseButton1Click:Connect(function()
-    if tpHome() then
+    if stealthTP(home) then
         tpBtn.Text = "OK!"
         task.wait(0.5)
         tpBtn.Text = "TP"
@@ -195,8 +204,8 @@ tpBtn.MouseButton1Click:Connect(function()
 end)
 
 tB.MouseButton1Click:Connect(function()
-    if tpHome() then
-        tB.Text = "Teleported!"
+    if stealthTP(home) then
+        tB.Text = "Done!"
         task.wait(0.8)
         tB.Text = "Teleport"
     end
@@ -211,7 +220,6 @@ hB.MouseButton1Click:Connect(function()
     print("[NhazX] Home: " .. tostring(home.Position))
 end)
 
--- Respawn
 LP.CharacterAdded:Connect(function(c)
     task.wait(0.5)
     Ch = c
@@ -220,4 +228,4 @@ LP.CharacterAdded:Connect(function(c)
     isTeleporting = false
 end)
 
-print("[NhazX v60] Ready - TP + SetHome")
+print("[NhazX v61] Ready - Stealth Teleport")
