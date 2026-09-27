@@ -1,8 +1,8 @@
--- palofsc: NhazX Steal An Egg - v53 FINAL
--- កំណត់ឈ្មោះសត្វពិនិត្យ (Guardian) ជាក់លាក់
--- Range: unlimited + Teleport ពេលដេញ
+-- palofsc: NhazX Steal An Egg - v57 FINAL
+-- Teleport ពេលកំពុង steal egg (កាន់ egg កំពុង steal ហើយត្រូវមេដេញ)
+-- Teleport Home ភ្លាម + Return ទៅចំណុច steal វិញ
 
-print("[NhazX v53] Loading...")
+print("[NhazX v57] Loading...")
 
 local P = game:GetService("Players")
 local S = game:GetService("RunService")
@@ -18,37 +18,13 @@ local on = false
 local godmode = true
 local home = H.CFrame
 local lastTp = 0
-local cooldown = 2.0
+local cooldown = 1.0
 local tpCount = 0
+local lastStealPoint = nil
+local autoReturn = true
+local returnDelay = 1.2
+local holdingEgg = false
 local lastChaseTime = 0
-local lastScan = 0
-local scanDelay = 0.5
-local nearbyNPCs = {}
-local unlimited = true
-
--- ឈ្មោះ Guardian ទាំងអស់
-local GUARDIANS = {
-    ["Chicken"] = true,
-    ["Swan"] = true,
-    ["Scorpion"] = true,
-    ["Tiger"] = true,
-    ["Yeti"] = true,
-    ["Cerberus"] = true,
-    ["Hellhound"] = true,
-    ["Beluga Whale"] = true,
-    ["Moby"] = true,
-    ["T-Rex"] = true,
-    ["Tyrannosaurus"] = true,
-    ["Cosmic Skeleton"] = true,
-    ["Cosmic Skeleton Boss"] = true,
-    ["Dragon"] = true,
-    ["Oni Tiger"] = true,
-    ["Nine-tailed fox"] = true,
-    ["King Gorilla"] = true,
-    ["Angel"] = true,
-    ["Demon"] = true,
-    ["Guardian"] = true,
-}
 
 print("[NhazX] Home: " .. tostring(home.Position))
 
@@ -76,7 +52,7 @@ local bc = Instance.new("UICorner") bc.CornerRadius = UDim.new(1,0) bc.Parent = 
 local bs = Instance.new("UIStroke") bs.Color = Color3.fromRGB(0,255,200) bs.Thickness = 2 bs.Parent = b
 
 local f = Instance.new("Frame")
-f.Size = UDim2.new(0, 185, 0, 210)
+f.Size = UDim2.new(0, 185, 0, 240)
 f.Position = UDim2.new(0, 85, 0.3, 0)
 f.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
 f.BorderSizePixel = 0
@@ -104,9 +80,11 @@ local oB = mkBtn("OFF", 10)
 oB.TextSize = 16
 local gB = mkBtn("Godmode: ON", 46, Color3.fromRGB(0, 130, 0))
 local hB = mkBtn("Set Home (here)", 82, Color3.fromRGB(0, 100, 180))
-local rdB = mkBtn("Range: unlimited", 118, Color3.fromRGB(0, 100, 180))
+local rb = mkBtn("Auto Return: ON", 118, Color3.fromRGB(0, 130, 0))
 local stB = mkBtn("Status: OFF", 154, Color3.fromRGB(40, 40, 40))
 stB.TextSize = 10
+local infoB = mkBtn("Holding: NO", 190, Color3.fromRGB(30, 30, 30))
+infoB.TextSize = 10
 
 local credit = Instance.new("TextLabel")
 credit.Size = UDim2.new(1, 0, 0, 18)
@@ -168,65 +146,73 @@ local function applyGodmode()
 end
 
 -- ============================================================
--- ពិនិត្យថាជា Guardian ឬអត់
+-- ពិនិត្យកាន់ egg
 -- ============================================================
-local function isGuardian(name)
-    -- ពិនិត្យឈ្មោះជាក់លាក់
-    if GUARDIANS[name] then return true end
-    
-    -- ពិនិត្យឈ្មោះដែលមានពាក្យទាំងនេះ
-    local lower = string.lower(name)
-    local keywords = {"guardian", "chicken", "swan", "scorpion", "tiger", "yeti", 
-                     "cerberus", "hellhound", "beluga", "moby", "trex", "t-rex",
-                     "tyranno", "cosmic", "dragon", "oni", "fox", "gorilla",
-                     "angel", "demon", "boss", "guard"}
-    
-    for _, kw in pairs(keywords) do
-        if string.find(lower, kw) then return true end
+local function hasEgg()
+    local c = LP.Character
+    if not c then return false end
+    for _, o in pairs(c:GetChildren()) do
+        if o:IsA("Tool") then
+            local n = string.lower(o.Name)
+            -- ពិនិត្យថាជា egg (មិនមែនដំបង)
+            if n:find("egg") or n:find("stolen") or n:find("pet") then
+                return true
+            end
+        end
     end
-    
     return false
 end
 
 -- ============================================================
--- ស្កេន Guardian
+-- ពិនិត្យមេដេញ (Guardian)
 -- ============================================================
-local function scanGuardians()
-    nearbyNPCs = {}
-    if not H or not H.Parent then return end
+local GUARDIANS = {
+    ["chicken"]=true, ["swan"]=true, ["scorpion"]=true, ["tiger"]=true,
+    ["yeti"]=true, ["cerberus"]=true, ["hellhound"]=true, ["beluga"]=true,
+    ["moby"]=true, ["t-rex"]=true, ["trex"]=true, ["tyranno"]=true,
+    ["cosmic"]=true, ["dragon"]=true, ["oni"]=true, ["fox"]=true,
+    ["gorilla"]=true, ["angel"]=true, ["demon"]=true, ["guardian"]=true,
+    ["guard"]=true,
+}
 
-    pcall(function()
-        for _, o in pairs(workspace:GetDescendants()) do
-            if o:IsA("Model") and o ~= Ch then
-                -- ពិនិត្យថាជា Guardian
-                if isGuardian(o.Name) then
-                    local hum = o:FindFirstChildOfClass("Humanoid")
-                    local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
-                    
-                    if hum and root and hum.Health > 0 then
-                        local dist = (root.Position - H.Position).Magnitude
-                        table.insert(nearbyNPCs, {
-                            model = o,
-                            dist = dist,
-                            hum = hum,
-                            root = root
-                        })
+local function isGuardianName(name)
+    local n = string.lower(name)
+    for k in pairs(GUARDIANS) do
+        if n:find(k) then return true end
+    end
+    return false
+end
+
+local function findChaser()
+    if not H or not H.Parent then return nil end
+    
+    for _, o in pairs(workspace:GetDescendants()) do
+        if o:IsA("Model") and o ~= Ch then
+            if isGuardianName(o.Name) then
+                local hum = o:FindFirstChildOfClass("Humanoid")
+                local root = o:FindFirstChild("HumanoidRootPart") or o.PrimaryPart
+                
+                if hum and root and hum.Health > 0 then
+                    local dist = (root.Position - H.Position).Magnitude
+                    if dist < 50 then
+                        return o, dist
                     end
                 end
             end
         end
-    end)
+    end
+    return nil
 end
 
 -- ============================================================
 -- TELEPORT
 -- ============================================================
-local function tpHome()
+local function tpTo(cf)
     if not H or not H.Parent then return end
     pcall(function()
         H.Velocity = Vector3.zero
         H.AssemblyLinearVelocity = Vector3.zero
-        H.CFrame = home
+        H.CFrame = cf
     end)
 end
 
@@ -234,7 +220,7 @@ end
 -- LOOP
 -- ============================================================
 spawn(function()
-    while task.wait(0.15) do
+    while task.wait(0.1) do
         if not Ch or not Ch.Parent then continue end
 
         if godmode then
@@ -249,60 +235,43 @@ spawn(function()
         if not on then continue end
         if not H or not H.Parent then continue end
 
-        -- ស្កេន Guardian រាល់ 0.5 វិនាទី
-        local t = tick()
-        if t - lastScan > scanDelay then
-            lastScan = t
-            scanGuardians()
-        end
+        -- ពិនិត្យកាន់ egg
+        local egg = hasEgg()
+        infoB.Text = "Holding: " .. (egg and "YES" or "NO")
 
-        -- រក Guardian ដែលដេញយើង
-        local chaser = nil
-        local chaserDist = 0
-        local closestDist = math.huge
-
-        for _, npcData in pairs(nearbyNPCs) do
-            if npcData.model and npcData.model.Parent and npcData.root and npcData.root.Parent then
-                local currentDist = (npcData.root.Position - H.Position).Magnitude
-                
-                -- ពិនិត្យថាដេញមករក
-                local vel = npcData.hum.MoveDirection
-                local isChasing = false
-                
-                if vel.Magnitude > 0.05 then
-                    local toUs = (H.Position - npcData.root.Position).Unit
-                    local dot = vel.Unit:Dot(toUs)
-                    if dot > 0.3 then
-                        isChasing = true
+        -- បើកំពុងកាន់ egg (ពេល steal) → ពិនិត្យមេដេញ
+        if egg then
+            local chaser, dist = findChaser()
+            
+            if chaser then
+                -- មេដេញ → teleport Home
+                local t = tick()
+                if t - lastTp > cooldown then
+                    lastTp = t
+                    tpCount = tpCount + 1
+                    
+                    -- ចាំចំណុចបច្ចុប្បន្ន
+                    lastStealPoint = H.CFrame
+                    
+                    -- Teleport Home
+                    stB.Text = "TP #" .. tpCount .. " → Home (" .. chaser.Name .. ")"
+                    tpTo(home)
+                    print("[NhazX] #" .. tpCount .. " Chased by " .. chaser.Name .. " → Home")
+                    
+                    -- Auto return
+                    if autoReturn and lastStealPoint then
+                        task.wait(returnDelay)
+                        stB.Text = "TP #" .. tpCount .. " → Return"
+                        tpTo(lastStealPoint)
+                        print("[NhazX] #" .. tpCount .. " → Return")
                     end
                 end
-                
-                -- បើ Guardian នៅជិត < 30 studs → ចាត់ទុកថាដេញ
-                if currentDist < 30 then
-                    isChasing = true
-                end
-                
-                if isChasing and currentDist < closestDist then
-                    closestDist = currentDist
-                    chaser = npcData.model
-                    chaserDist = currentDist
-                end
-            end
-        end
-
-        if chaser then
-            local t2 = tick()
-            if t2 - lastTp > cooldown then
-                lastTp = t2
-                lastChaseTime = t2
-                tpCount = tpCount + 1
-                stB.Text = "TP #" .. tpCount .. ": " .. chaser.Name
-                tpHome()
-                print("[NhazX] #" .. tpCount .. " " .. chaser.Name .. " at " .. math.floor(chaserDist))
+            else
+                stB.Text = "Holding Egg - Safe"
             end
         else
-            if tick() - lastChaseTime > 2 then
-                stB.Text = "Watching... (" .. #nearbyNPCs .. ")"
+            if tick() - lastTp > 1.5 then
+                stB.Text = "Watching..."
             end
         end
     end
@@ -314,7 +283,6 @@ LP.CharacterAdded:Connect(function(c)
     H = c:WaitForChild("HumanoidRootPart")
     Hu = c:WaitForChild("Humanoid")
     applyGodmode()
-    nearbyNPCs = {}
 end)
 
 -- ============================================================
@@ -329,8 +297,6 @@ oB.MouseButton1Click:Connect(function()
         oB.BackgroundColor3 = Color3.fromRGB(0,180,0)
         bs.Color = Color3.fromRGB(0,255,0)
         stB.Text = "Watching..."
-        lastChaseTime = 0
-        lastScan = 0
         tpCount = 0
         applyGodmode()
     else
@@ -361,17 +327,16 @@ hB.MouseButton1Click:Connect(function()
     print("[NhazX] Home: " .. tostring(home.Position))
 end)
 
-rdB.MouseButton1Click:Connect(function()
-    unlimited = not unlimited
-    if unlimited then
-        rdB.Text = "Range: unlimited"
-        rdB.BackgroundColor3 = Color3.fromRGB(0, 100, 180)
+rb.MouseButton1Click:Connect(function()
+    autoReturn = not autoReturn
+    if autoReturn then
+        rb.Text = "Auto Return: ON"
+        rb.BackgroundColor3 = Color3.fromRGB(0, 130, 0)
     else
-        rdB.Text = "Range: 100"
-        rdB.BackgroundColor3 = Color3.fromRGB(80, 40, 100)
+        rb.Text = "Auto Return: OFF"
+        rb.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
     end
 end)
 
 applyGodmode()
-print("[NhazX v53] Script By @nhaz_samurai")
-print("Guardians: " .. #GUARDIANS)
+print("[NhazX v57] Script By @nhaz_samurai")
