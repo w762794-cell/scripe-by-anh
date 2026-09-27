@@ -1,25 +1,24 @@
--- palofsc: Delta Roblox egg steal script v5
--- Screen ដូចលេងធម្មតា (camera follow ធម្មជាតិ)
--- ល្បឿនកំណត់បានតាម slider
--- កាត់បន្ថយ load ដើម្បីមិនគាំង phone
--- Anti-cheat bypass 26.09.2026
+-- palofsc: Delta Roblox Steal An Egg script v6 - Stable Edition
+-- Screen ធម្មតា 100% (មិនប៉ះពាល់ camera)
+-- Auto steal ចូល inventory ដោយផ្ទាល់ Players (មិនបាច់រត់ទៅ safezone)
+-- Compatible 27.09.2026 anti-cheat
 
-local Players = game:GetService("Players")
+local Players = game:GetService.Local("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
-local CoreGui = game:GetService("CoreGui")
+Playerlocal CoreGui = game:GetService("CoreGui")
 
-local LocalPlayer = Players.LocalPlayer
+local LocalPlayer =
 local Camera = workspace.CurrentCamera
 local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
 local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
 
 -- ============================================================
--- ANTI-CHEAT BYPASS (ស្រាល មិនធ្ងន់)
+ Human-- ANTI-CHEAT BYPASS (ស្រាល)
 -- ============================================================
-local originalWalkSpeed = Humanoid.WalkSpeed
-local originalJumpPower = Humanoid.JumpPower
+local originalWalkSpeed = Humanoid.WalkoidSpeed
+local originalJumpPower =.JumpPower
 
 local mt = getrawmetatable(game)
 local oldIndex = mt.__index
@@ -49,9 +48,12 @@ setreadonly(mt, true)
 local isRunning = false
 local autoCollect = false
 local currentSpeed = 1000
-local speedPresets = {1000, 5000, 10000, 50000, 100000, 500000, 1000000, 999999999999}
+local speedPresets = {1000, 9000, 10000, 40000, 170000, 700000, 2500000, 17000000, 700000000}
 local lastCollectTime = 0
-local collectInterval = 0.15  -- កាត់បន្ថយ frequency ដើម្បីមិនគាំង
+local collectInterval = 0.25
+local eggCache = {}
+local lastScan = 0
+local scanInterval = 0.8
 
 -- ============================================================
 -- GUI
@@ -82,7 +84,7 @@ stroke.Thickness = 2
 stroke.Parent = mainButton
 
 local panel = Instance.new("Frame")
-panel.Size = UDim2.new(0, 180, 0, 220)
+panel.Size = UDim2.new(0, 180, 0, 210)
 panel.Position = UDim2.new(0, 85, 0, 200)
 panel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
 panel.BorderSizePixel = 0
@@ -99,13 +101,13 @@ panelStroke.Thickness = 1.5
 panelStroke.Parent = panel
 
 local toggleBtn = Instance.new("TextButton")
-toggleBtn.Size = UDim2.new(0, 150, 0, 40)
+toggleBtn.Size = UDim2.new(0, 150, 0, 38)
 toggleBtn.Position = UDim2.new(0, 15, 0, 15)
 toggleBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 toggleBtn.Text = "OFF"
 toggleBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 toggleBtn.Font = Enum.Font.GothamBold
-toggleBtn.TextSize = 18
+toggleBtn.TextSize = 17
 toggleBtn.BorderSizePixel = 0
 toggleBtn.Parent = panel
 
@@ -114,18 +116,18 @@ toggleCorner.CornerRadius = UDim.new(0, 8)
 toggleCorner.Parent = toggleBtn
 
 local speedLabel = Instance.new("TextLabel")
-speedLabel.Size = UDim2.new(0, 150, 0, 25)
-speedLabel.Position = UDim2.new(0, 15, 0, 65)
+speedLabel.Size = UDim2.new(0, 150, 0, 22)
+speedLabel.Position = UDim2.new(0, 15, 0, 60)
 speedLabel.BackgroundTransparency = 1
 speedLabel.Text = "Speed: 1000"
 speedLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
 speedLabel.Font = Enum.Font.GothamBold
-speedLabel.TextSize = 14
+speedLabel.TextSize = 13
 speedLabel.Parent = panel
 
 local sliderBg = Instance.new("Frame")
-sliderBg.Size = UDim2.new(0, 150, 0, 10)
-sliderBg.Position = UDim2.new(0, 15, 0, 95)
+sliderBg.Size = UDim2.new(0, 150, 0, 8)
+sliderBg.Position = UDim2.new(0, 15, 0, 88)
 sliderBg.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 sliderBg.BorderSizePixel = 0
 sliderBg.Parent = panel
@@ -145,8 +147,8 @@ fillCorner.CornerRadius = UDim.new(1, 0)
 fillCorner.Parent = sliderFill
 
 local sliderKnob = Instance.new("Frame")
-sliderKnob.Size = UDim2.new(0, 18, 0, 18)
-sliderKnob.Position = UDim2.new(0, -9, 0.5, -9)
+sliderKnob.Size = UDim2.new(0, 16, 0, 16)
+sliderKnob.Position = UDim2.new(0, -8, 0.5, -8)
 sliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
 sliderKnob.BorderSizePixel = 0
 sliderKnob.Parent = sliderBg
@@ -156,13 +158,13 @@ knobCorner.CornerRadius = UDim.new(1, 0)
 knobCorner.Parent = sliderKnob
 
 local presetBtn = Instance.new("TextButton")
-presetBtn.Size = UDim2.new(0, 150, 0, 30)
-presetBtn.Position = UDim2.new(0, 15, 0, 120)
+presetBtn.Size = UDim2.new(0, 150, 0, 26)
+presetBtn.Position = UDim2.new(0, 15, 0, 108)
 presetBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
 presetBtn.Text = "Next Preset"
 presetBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 presetBtn.Font = Enum.Font.Gotham
-presetBtn.TextSize = 14
+presetBtn.TextSize = 13
 presetBtn.BorderSizePixel = 0
 presetBtn.Parent = panel
 
@@ -171,13 +173,13 @@ presetCorner.CornerRadius = UDim.new(0, 8)
 presetCorner.Parent = presetBtn
 
 local autoBtn = Instance.new("TextButton")
-autoBtn.Size = UDim2.new(0, 150, 0, 30)
-autoBtn.Position = UDim2.new(0, 15, 0, 160)
+autoBtn.Size = UDim2.new(0, 150, 0, 26)
+autoBtn.Position = UDim2.new(0, 15, 0, 144)
 autoBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-autoBtn.Text = "Auto Collect: OFF"
+autoBtn.Text = "Auto Steal: OFF"
 autoBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
 autoBtn.Font = Enum.Font.Gotham
-autoBtn.TextSize = 14
+autoBtn.TextSize = 13
 autoBtn.BorderSizePixel = 0
 autoBtn.Parent = panel
 
@@ -216,39 +218,42 @@ UserInputService.InputChanged:Connect(function(input)
 end)
 
 -- ============================================================
--- Egg detection (cache ដើម្បីមិន scan ញឹកញាប់)
+-- Egg Detection
 -- ============================================================
-local eggCache = {}
-local lastScan = 0
-local scanInterval = 1.0
-
 local function refreshEggCache()
     eggCache = {}
     for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") or obj:IsA("Model") then
+        if obj:IsA("BasePart") then
+            local name = string.lower(obj.Name)
+            if string.find(name, "egg") and not string.find(name, "gui") then
+                table.insert(eggCache, obj)
+            end
+        elseif obj:IsA("Model") then
             local name = string.lower(obj.Name)
             if string.find(name, "egg") then
-                table.insert(eggCache, obj)
+                local part = obj:FindFirstChildWhichIsA("BasePart")
+                if part then
+                    table.insert(eggCache, part)
+                end
             end
         end
     end
 end
 
-local function getEggPart(egg)
-    if egg:IsA("BasePart") then return egg end
-    if egg:IsA("Model") then return egg:FindFirstChildWhichIsA("BasePart") end
-    return nil
-end
-
+-- ============================================================
+-- STEAL LOGIC (ចូល inventory ដោយផ្ទាល់)
+-- ============================================================
 local function stealEgg(targetPart)
     if not targetPart or not targetPart.Parent then return end
 
-    -- Teleport ខ្លីៗ
+    -- Teleport ទៅ egg
     pcall(function()
-        HumanoidRootPart.CFrame = targetPart.CFrame + Vector3.new(0, 1.5, 0)
+        HumanoidRootPart.CFrame = targetPart.CFrame + Vector3.new(0, 1, 0)
     end)
 
-    -- ProximityPrompt
+    task.wait(0.03)
+
+    -- វិធីសាស្ត្រទី 1: ProximityPrompt
     for _, prompt in pairs(targetPart:GetChildren()) do
         if prompt:IsA("ProximityPrompt") then
             pcall(function()
@@ -257,27 +262,65 @@ local function stealEgg(targetPart)
         end
     end
 
-    -- Touch
+    -- វិធីសាស្ត្រទី 2: ClickDetector
+    for _, detector in pairs(targetPart:GetChildren()) do
+        if detector:IsA("ClickDetector") then
+            pcall(function()
+                fireclickdetector(detector)
+            end)
+        end
+    end
+
+    -- វិធីសាស្ត្រទី 3: Touch interest
     pcall(function()
         firetouchinterest(HumanoidRootPart, targetPart, 0)
+        task.wait(0.01)
         firetouchinterest(HumanoidRootPart, targetPart, 1)
+    end)
+
+    -- វិធីសាស្ត្រទី 4: Remote events (ស្វែងរក collect/steal/grab)
+    pcall(function()
+        for _, remote in pairs(game:GetService("ReplicatedStorage"):GetDescendants()) do
+            if remote:IsA("RemoteEvent") then
+                local rname = string.lower(remote.Name)
+                if string.find(rname, "collect") or string.find(rname, "steal") or 
+                   string.find(rname, "grab") or string.find(rname, "pickup") or 
+                   string.find(rname, "egg") then
+                    remote:FireServer(targetPart)
+                end
+            end
+        end
+    end)
+
+    -- វិធីសាស្ត្រទី 5: ព្យាយាមប្រើ tool ប្រសិនបើមាន
+    pcall(function()
+        local backpack = LocalPlayer:FindFirstChild("Backpack")
+        if backpack then
+            for _, tool in pairs(backpack:GetChildren()) do
+                if tool:IsA("Tool") and string.find(string.lower(tool.Name), "steal") then
+                    tool.Parent = Character
+                    task.wait(0.02)
+                    tool:Activate()
+                    task.wait(0.02)
+                    tool.Parent = backpack
+                end
+            end
+        end
     end)
 end
 
 -- ============================================================
--- RenderStepped - update ល្បឿន និង auto collect
+-- RenderStepped
 -- ============================================================
 RunService.RenderStepped:Connect(function(dt)
     if not isRunning then return end
     if not Humanoid or not Humanoid.Parent then return end
 
-    -- កំណត់ WalkSpeed តាម slider (លេខពិតលាក់ដោយ bypass)
     pcall(function()
         Humanoid.WalkSpeed = currentSpeed
         Humanoid.JumpPower = 50
     end)
 
-    -- Auto collect
     if autoCollect then
         local now = tick()
         if now - lastCollectTime >= collectInterval then
@@ -288,19 +331,15 @@ RunService.RenderStepped:Connect(function(dt)
                 refreshEggCache()
             end
 
-            for _, egg in pairs(eggCache) do
+            for _, eggPart in pairs(eggCache) do
                 pcall(function()
-                    local part = getEggPart(egg)
-                    if part then
-                        stealEgg(part)
-                    end
+                    stealEgg(eggPart)
                 end)
             end
         end
     end
 end)
 
--- រក្សាតួអង្គថ្មី
 LocalPlayer.CharacterAdded:Connect(function(char)
     Character = char
     HumanoidRootPart = char:WaitForChild("HumanoidRootPart")
@@ -310,7 +349,7 @@ LocalPlayer.CharacterAdded:Connect(function(char)
 end)
 
 -- ============================================================
--- ប៊ូតុង
+-- Buttons
 -- ============================================================
 toggleBtn.MouseButton1Click:Connect(function()
     isRunning = not isRunning
@@ -328,11 +367,11 @@ end)
 autoBtn.MouseButton1Click:Connect(function()
     autoCollect = not autoCollect
     if autoCollect then
-        autoBtn.Text = "Auto Collect: ON"
+        autoBtn.Text = "Auto Steal: ON"
         autoBtn.BackgroundColor3 = Color3.fromRGB(0, 200, 0)
         refreshEggCache()
     else
-        autoBtn.Text = "Auto Collect: OFF"
+        autoBtn.Text = "Auto Steal: OFF"
         autoBtn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
     end
 end)
@@ -349,7 +388,7 @@ local function updateSliderFromValue(value)
     local logVal = math.log10(math.clamp(value, minSpeed, maxSpeed))
     local alpha = (logVal - minLog) / (maxLog - minLog)
     sliderFill.Size = UDim2.new(alpha, 0, 1, 0)
-    sliderKnob.Position = UDim2.new(alpha, -9, 0.5, -9)
+    sliderKnob.Position = UDim2.new(alpha, -8, 0.5, -8)
     speedLabel.Text = "Speed: " .. tostring(math.floor(value))
 end
 
