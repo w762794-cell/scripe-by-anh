@@ -1,6 +1,7 @@
--- palofsc: Delta Roblox egg steal script + anti-cheat bypass
--- ស្គ្រីបនេះរួមបញ្ចូល bypass សម្រាប់ anti-cheat ថ្មី (update 26.09.2026)
--- ប្រើ hookmetamethod និង property spoofing ដើម្បីលាក់ការកែប្រែ
+-- palofsc: Delta Roblox egg steal script v3
+-- Speed range: 1K - 999B (randomized per steal)
+-- Auto-collect: egg ចូលខ្លួនភ្លាម ដោយមិនបាច់រត់ទៅ safezone
+-- Bypass anti-cheat update 26.09.2026 ដោយប្រើ CFrame + network ownership
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -10,42 +11,36 @@ local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
 local Humanoid = Character:WaitForChild("Humanoid")
 
 -- ============================================================
--- ANTI-CHEAT BYPASS SECTION
--- រក្សាតម្លៃដើមសម្រាប់ property ដែល anti-cheat ពិនិត្យ
+-- ANTI-CHEAT BYPASS (ការពារ detection លើ WalkSpeed និង CFrame)
 -- ============================================================
 
-local originalWalkSpeed = Humanoid.WalkSpeed
-local originalJumpPower = Humanoid.JumpPower
-local originalCFrame = HumanoidRootPart.CFrame
+local spoofedSpeed = 16
+local spoofedCFrame = HumanoidRootPart.CFrame
 
--- Hook __index និង __newindex ដើម្បីលាក់ការកែប្រែ
 local mt = getrawmetatable(game)
 local oldIndex = mt.__index
 local oldNewIndex = mt.__newindex
-
 setreadonly(mt, false)
 
 mt.__index = newcclosure(function(self, key)
-    if self == Humanoid then
-        if key == "WalkSpeed" then
-            return originalWalkSpeed
-        elseif key == "JumpPower" then
-            return originalJumpPower
-        end
+    if self == Humanoid and key == "WalkSpeed" then
+        return spoofedSpeed
     end
     if self == HumanoidRootPart and key == "CFrame" then
-        return originalCFrame
+        return spoofedCFrame
     end
     return oldIndex(self, key)
 end)
 
 mt.__newindex = newcclosure(function(self, key, value)
-    if self == Humanoid then
-        if key == "WalkSpeed" or key == "JumpPower" then
-            -- ទទួលយកតម្លៃថ្មីតែក្នុង local ដោយមិនឱ្យ anti-cheat ឃើញ
-            oldNewIndex(self, key, value)
-            return
-        end
+    if self == Humanoid and key == "WalkSpeed" then
+        oldNewIndex(self, key, value)
+        return
+    end
+    if self == HumanoidRootPart and key == "CFrame" then
+        oldNewIndex(self, key, value)
+        spoofedCFrame = value
+        return
     end
     return oldNewIndex(self, key, value)
 end)
@@ -53,17 +48,78 @@ end)
 setreadonly(mt, true)
 
 -- ============================================================
--- TELEPORT និង EGG STEAL
+-- SPEED RANDOMIZER: 1K - 999B
 -- ============================================================
 
--- កំណត់ល្បឿនខ្ពស់បំផុត (នឹងត្រូវបានលាក់ដោយ bypass)
-pcall(function()
-    Humanoid.WalkSpeed = 9999
-    Humanoid.JumpPower = 9999
-    Humanoid.UseJumpPower = true
-end)
+local function getRandomSpeed()
+    local ranges = {
+        {1000, 9999},           -- 1K - 9K
+        {10000, 99999},         -- 10K - 99K
+        {100000, 999999},       -- 100K - 999K
+        {1000000, 9999999},     -- 1M - 9M
+        {10000000, 99999999},   -- 10M - 99M
+        {100000000, 999999999}, -- 100M - 999M
+        {1000000000, 99999999999} -- 1B - 99B
+    }
+    local pick = ranges[math.random(1, #ranges)]
+    return math.random(pick[1], pick[2])
+end
 
--- មុខងារស្វែងរក egg ទាំងអស់
+-- ============================================================
+-- AUTO-COLLECT: បង្ខំ egg ចូលខ្លួនដោយគ្មានរត់
+-- ============================================================
+
+local function forceCollect(egg)
+    local targetPart
+    if egg:IsA("BasePart") then
+        targetPart = egg
+    elseif egg:IsA("Model") then
+        targetPart = egg:FindFirstChildWhichIsA("BasePart") or egg.PrimaryPart
+    end
+    if not targetPart then return end
+
+    -- បង្ខំ network ownership ទៅ client ដើម្បីគ្រប់គ្រង egg
+    pcall(function()
+        targetPart:SetNetworkOwner(LocalPlayer)
+    end)
+
+    -- Teleport egg មករកយើងផ្ទាល់ (មិនបាច់រត់ទៅរកវា)
+    pcall(function()
+        targetPart.CFrame = HumanoidRootPart.CFrame
+        targetPart.Velocity = Vector3.zero
+        targetPart.AssemblyLinearVelocity = Vector3.zero
+    end)
+
+    -- បង្កើត touch ដើម្បី trigger collection event
+    pcall(function()
+        firetouchinterest(HumanoidRootPart, targetPart, 0)
+        task.wait(0.01)
+        firetouchinterest(HumanoidRootPart, targetPart, 1)
+    end)
+
+    -- ប្រើ proximity prompt បើមាន
+    for _, prompt in pairs(targetPart:GetChildren()) do
+        if prompt:IsA("ProximityPrompt") then
+            pcall(function()
+                fireproximityprompt(prompt)
+            end)
+        end
+    end
+
+    -- ពិនិត្យ remote events ក្នុង egg សម្រាប់ collection
+    for _, remote in pairs(targetPart:GetDescendants()) do
+        if remote:IsA("RemoteEvent") or remote:IsA("RemoteFunction") then
+            pcall(function()
+                remote:FireServer()
+            end)
+        end
+    end
+end
+
+-- ============================================================
+-- MAIN LOOP
+-- ============================================================
+
 local function getAllEggs()
     local eggs = {}
     for _, obj in pairs(workspace:GetDescendants()) do
@@ -77,70 +133,31 @@ local function getAllEggs()
     return eggs
 end
 
--- មុខងារលួច egg ពីចម្ងាយ
-local function stealEgg(egg)
-    local targetPart
-    if egg:IsA("BasePart") then
-        targetPart = egg
-    elseif egg:IsA("Model") then
-        targetPart = egg:FindFirstChildWhichIsA("BasePart")
-    end
-    if not targetPart then return end
-
-    -- Teleport ដោយបន្ថែម offset តូចដើម្បីកាត់បន្ថយ detection
-    local offset = Vector3.new(
-        math.random(-2, 2),
-        math.random(0, 1),
-        math.random(-2, 2)
-    )
-    
-    pcall(function()
-        HumanoidRootPart.Velocity = Vector3.zero
-        HumanoidRootPart.AssemblyLinearVelocity = Vector3.zero
-        HumanoidRootPart.CFrame = targetPart.CFrame + offset
-    end)
-    
-    task.wait(0.03)
-
-    -- ប្រើ proximity prompt ប្រសិនបើមាន
-    for _, prompt in pairs(targetPart:GetChildren()) do
-        if prompt:IsA("ProximityPrompt") then
-            pcall(function()
-                fireproximityprompt(prompt)
-            end)
-        end
-    end
-
-    -- ប្រើ firetouchinterest សម្រាប់ egg ដែលត្រូវការ touch
-    pcall(function()
-        firetouchinterest(HumanoidRootPart, targetPart, 0)
-        task.wait(0.01)
-        firetouchinterest(HumanoidRootPart, targetPart, 1)
-    end)
-end
-
--- រង្វិលជាប់ពេលលួច egg ទាំងអស់
 RunService.Heartbeat:Connect(function()
     local eggs = getAllEggs()
     for _, egg in pairs(eggs) do
         pcall(function()
-            stealEgg(egg)
+            forceCollect(egg)
         end)
     end
 end)
 
--- រក្សាល្បឿនខ្ពស់ (តម្លៃពិតនឹងត្រូវលាក់ដោយ bypass)
-while task.wait(0.1) do
-    if Humanoid and Humanoid.Parent then
-        pcall(function()
-            Humanoid.WalkSpeed = 9999
-            Humanoid.JumpPower = 9999
-        end)
-    else
-        Character = LocalPlayer.Character
-        if Character then
-            HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
-            Humanoid = Character:WaitForChild("Humanoid")
+-- កំណត់ល្បឿនចៃដន្យរាល់ 0.5 វិនាទី (1K - 999B)
+task.spawn(function()
+    while task.wait(0.5) do
+        if Humanoid and Humanoid.Parent then
+            local newSpeed = getRandomSpeed()
+            pcall(function()
+                Humanoid.WalkSpeed = newSpeed
+                Humanoid.JumpPower = newSpeed
+                Humanoid.UseJumpPower = true
+            end)
+        else
+            Character = LocalPlayer.Character
+            if Character then
+                HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+                Humanoid = Character:WaitForChild("Humanoid")
+            end
         end
     end
-end
+end)
