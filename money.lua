@@ -1,436 +1,252 @@
--- Roblox: Steal an Egg / Steal a Brainrot
--- GUI: NhazX | Credit: script by @nhaz_samurai
--- Auto-target high value pets + Instant claim + Fast fly back
--- Paste into executor (Delta, Fluxus, Solara, Synapse)
+-- NhazX Egg Steal | Credit: @nhaz_samurai
+-- Compact + Anti-detection version
 
-local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
-local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
-local Camera = workspace.CurrentCamera
+local P=game:GetService("Players")local R=game:GetService("RunService")
+local U=game:GetService("UserInputService")local T=game:GetService("TweenService")
+local CG=game:GetService("CoreGui")local LP=P.LocalPlayer
 
--- =========================================================
--- CONFIG / ការកំណត់
--- =========================================================
-local CONFIG = {
-    AutoSteal     = false,
-    InstantClaim  = true,
-    FlySpeed      = 250,      -- ល្បឿនហោះទៅរក egg
-    ReturnSpeed   = 350,      -- ល្បឿនត្រឡប់មកវិញ
-    StealRange    = 9999,
-    PriorityList  = true,     -- យកតែ egg តម្លៃថ្លៃមុន
-    AntiKick      = true,
-    LoopDelay     = 0.1,
-}
+-- Anti-detect
+pcall(function()if getgenv then getgenv().NX=tostring(math.random(1e5,1e6))end end)
+if _G.NX_G then pcall(function()_G.NX_G:Destroy()end)end
+_G.NX_G=true
 
--- =========================================================
--- PRIORITY PETS / របស់តម្លៃថ្លៃ (តាមរូបភាព)
--- =========================================================
-local PRIORITY_PETS = {
-    -- Divine (ខ្ពស់បំផុត)
-    ["Aetheron"]     = 100,
-    ["World Burner"] = 99,
-    ["ArchAngel"]    = 98,
-    ["Kitsune"]      = 97,
-    ["Unicorn"]      = 96,
-    ["Nightflame"]   = 95,
-
-    -- Eternal
-    ["Gorilla King"] = 90,
-
-    -- Cosmic
-    ["Triceratops"]  = 85,
-
-    -- Mythic
-    ["Ankylosaurus"] = 80,
-
-    -- Legendary
-    ["Pterodactyl"]  = 75,
-
-    -- Royal
-    ["Orca"]         = 70,
-    ["Scorpion"]     = 69,
-    ["Royal Sphinx"] = 68,
-
-    -- Rare
-    ["Sand Spider"]  = 60,
-    ["Owl"]          = 59,
-
-    -- Common
-    ["Turtle"]       = 50,
-    ["Duckling"]     = 49,
-    ["Chicken"]      = 48,
-}
-
--- =========================================================
--- ANTI-KICK / ការពារការបណ្តេញ
--- =========================================================
-if CONFIG.AntiKick then
-    pcall(function()
-        local mt = getrawmetatable(game)
-        if mt and mt.__namecall then
-            local old = mt.__namecall
-            setreadonly(mt, false)
-            mt.__namecall = newcclosure(function(self, ...)
-                if getnamecallmethod() == "Kick" and self == LocalPlayer then
-                    return nil
-                end
-                return old(self, ...)
-            end)
-            setreadonly(mt, true)
-        end
-    end)
-end
-
--- =========================================================
--- REMOTE CACHE / ចាប់ remote លួច
--- =========================================================
-local StealRemotes = {}
-local function cacheRemotes()
-    StealRemotes = {}
-    local function scan(parent)
-        for _, r in pairs(parent:GetDescendants()) do
-            if r:IsA("RemoteEvent") or r:IsA("RemoteFunction") then
-                local n = r.Name:lower()
-                if n:find("steal") or n:find("claim") or n:find("take")
-                or n:find("grab") or n:find("pickup") or n:find("own")
-                or n:find("place") or n:find("collect") or n:find("egg") then
-                    table.insert(StealRemotes, r)
-                end
-            end
-        end
-    end
-    scan(ReplicatedStorage)
-    scan(workspace)
-    scan(LocalPlayer)
-end
-
--- =========================================================
--- GET PET VALUE / រកតម្លៃរបស់
--- =========================================================
-local function getPetValue(obj)
-    if not obj then return 0 end
-    local name = obj.Name
-
-    -- ពិនិត្យឈ្មោះផ្ទាល់
-    for petName, value in pairs(PRIORITY_PETS) do
-        if name:lower():find(petName:lower()) then
-            return value
-        end
-    end
-
-    -- ពិនិត្យ attribute
-    local attr = obj:GetAttribute("PetName") or obj:GetAttribute("Name")
-    if attr then
-        for petName, value in pairs(PRIORITY_PETS) do
-            if tostring(attr):lower():find(petName:lower()) then
-                return value
-            end
-        end
-    end
-
-    return 0
-end
-
--- =========================================================
--- GET ALL EGGS with VALUE / រក egg ទាំងអស់តាមតម្លៃ
--- =========================================================
-local function getAllEggsSorted()
-    local list = {}
-    for _, obj in pairs(workspace:GetDescendants()) do
-        if obj:IsA("BasePart") or obj:IsA("Model") then
-            local n = obj.Name:lower()
-            if n:find("egg") or n:find("brainrot") or n:find("pet")
-            or n:find("chicken") or n:find("duck") or n:find("turtle")
-            or n:find("owl") or n:find("spider") or n:find("sphinx")
-            or n:find("scorpion") or n:find("orca") or n:find("ptero")
-            or n:find("ankylo") or n:find("trice") or n:find("gorilla")
-            or n:find("nightflame") or n:find("unicorn") or n:find("kitsune")
-            or n:find("archangel") or n:find("burner") or n:find("aetheron") then
-                local value = getPetValue(obj)
-                table.insert(list, {obj = obj, value = value})
-            end
-        end
-    end
-    -- តម្រៀបតាមតម្លៃខ្ពស់មុន
-    if CONFIG.PriorityList then
-        table.sort(list, function(a, b) return a.value > b.value end)
-    end
-    return list
-end
-
--- =========================================================
--- FLY TO TARGET / ហោះទៅរករបស់
--- =========================================================
-local function flyTo(targetPart, speed)
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-    if not targetPart then return end
-
-    local hrp = char.HumanoidRootPart
-    local startPos = hrp.Position
-    local endPos = targetPart.Position + Vector3.new(0, 3, 0)
-    local distance = (endPos - startPos).Magnitude
-    local duration = distance / speed
-
-    local tween = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
-        CFrame = CFrame.new(endPos, endPos + targetPart.CFrame.LookVector)
-    })
-    tween:Play()
-    tween.Completed:Wait()
-end
-
--- =========================================================
--- INSTANT CLAIM / លួចភ្លាម
--- =========================================================
-local function instantClaim(obj)
-    if not obj then return end
-    local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-    if not target then return end
-
-    -- Fire remotes ទាំងអស់
-    for _, r in pairs(StealRemotes) do
-        pcall(function()
-            if r:IsA("RemoteEvent") then
-                r:FireServer(obj)
-                r:FireServer(target)
-                r:FireServer(obj, LocalPlayer)
-                r:FireServer(target, LocalPlayer.UserId)
-            else
-                r:InvokeServer(obj)
-                r:InvokeServer(target)
-            end
-        end)
-    end
-
-    -- បង្ខំ attribute
-    pcall(function()
-        obj:SetAttribute("Owner", LocalPlayer.UserId)
-        obj:SetAttribute("OwnerId", LocalPlayer.UserId)
-        obj:SetAttribute("Claimed", true)
-        target:SetAttribute("Owner", LocalPlayer.UserId)
-        target:SetAttribute("OwnerId", LocalPlayer.UserId)
-    end)
-
-    -- បង្ខំ Value objects
-    pcall(function()
-        for _, v in pairs(obj:GetDescendants()) do
-            local nm = v.Name:lower()
-            if v:IsA("ObjectValue") and (nm:find("owner") or nm:find("creator")) then
-                v.Value = LocalPlayer
-            elseif (v:IsA("IntValue") or v:IsA("NumberValue")) and (nm:find("owner") or nm:find("creator")) then
-                v.Value = LocalPlayer.UserId
-            elseif v:IsA("StringValue") and (nm:find("owner") or nm:find("creator")) then
-                v.Value = LocalPlayer.Name
-            end
-        end
-    end)
-
-    -- ProximityPrompt
-    pcall(function()
-        for _, p in pairs(obj:GetDescendants()) do
-            if p:IsA("ProximityPrompt") then
-                p:InputHoldBegin()
-                task.wait(0.01)
-                p:InputHoldEnd()
-            end
-        end
-    end)
-end
-
--- =========================================================
--- STEAL + FLY BACK / លួច + ហោះត្រឡប់
--- =========================================================
-local function stealAndReturn(eggData)
-    if not eggData or not eggData.obj then return end
-
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-
-    local hrp = char.HumanoidRootPart
-    local originalPos = hrp.CFrame
-
-    local target = eggData.obj:IsA("Model") and (eggData.obj.PrimaryPart or eggData.obj:FindFirstChildWhichIsA("BasePart")) or eggData.obj
-    if not target then return end
-
-    -- 1. ហោះទៅរក egg លឿន
-    flyTo(target, CONFIG.FlySpeed)
-
-    -- 2. លួច
-    instantClaim(eggData.obj)
-
-    -- 3. ហោះត្រឡប់មកវិញលឿន
-    local returnTween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Linear), {
-        CFrame = originalPos
-    })
-    returnTween:Play()
-    returnTween.Completed:Wait()
-end
-
--- =========================================================
--- DRAGGABLE
--- =========================================================
-local function makeDraggable(frame, dragArea)
-    dragArea = dragArea or frame
-    local dragging, dragStart, startPos
-
-    dragArea.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-        or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPos = frame.Position
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then dragging = false end
-            end)
-        end
-    end)
-
-    UserInputService.InputChanged:Connect(function(input)
-        if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
-        or input.UserInputType == Enum.UserInputType.Touch) then
-            local delta = input.Position - dragStart
-            frame.Position = UDim2.new(
-                startPos.X.Scale, startPos.X.Offset + delta.X,
-                startPos.Y.Scale, startPos.Y.Offset + delta.Y
-            )
-        end
-    end)
-end
-
--- =========================================================
 -- GUI
--- =========================================================
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "NhazX"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.DisplayOrder = 999
-ScreenGui.Parent = PlayerGui
+local S=Instance.new("ScreenGui")S.Name="NX_"..math.random(1,99999)
+S.ResetOnSpawn=false
+pcall(function()S.Parent=CG end)
+if not S.Parent then S.Parent=LP:WaitForChild("PlayerGui")end
+_G.NX_GUI=S
 
-local MiniBtn = Instance.new("TextButton")
-MiniBtn.Size = UDim2.new(0, 55, 0, 55)
-MiniBtn.Position = UDim2.new(0.75, 0, 0.25, 0)
-MiniBtn.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-MiniBtn.Text = "N"
-MiniBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-MiniBtn.Font = Enum.Font.GothamBold
-MiniBtn.TextSize = 24
-MiniBtn.Active = true
-MiniBtn.Parent = ScreenGui
-local MC = Instance.new("UICorner"); MC.CornerRadius = UDim.new(1, 0); MC.Parent = MiniBtn
-local MS = Instance.new("UIStroke"); MS.Color = Color3.fromRGB(255, 255, 255); MS.Thickness = 2; MS.Parent = MiniBtn
+-- Icon
+local I=Instance.new("TextButton")I.Size=UDim2.new(0,55,0,55)
+I.Position=UDim2.new(0,20,.5,-27)I.BackgroundColor3=Color3.fromRGB(18,18,22)
+I.Text="NX"I.TextColor3=Color3.fromRGB(0,255,170)I.Font=Enum.Font.GothamBlack
+I.TextSize=22 I.BorderSizePixel=0 I.Parent=S
+Instance.new("UICorner",I).CornerRadius=UDim.new(0,12)
+local st=Instance.new("UIStroke",I)st.Color=Color3.fromRGB(0,255,170)st.Thickness=2
 
-local Panel = Instance.new("Frame")
-Panel.Size = UDim2.new(0, 250, 0, 320)
-Panel.Position = UDim2.new(0, 30, 0, 220)
-Panel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
-Panel.BorderSizePixel = 0
-Panel.Visible = false
-Panel.Active = true
-Panel.Parent = ScreenGui
-local PC = Instance.new("UICorner"); PC.CornerRadius = UDim.new(0, 10); PC.Parent = Panel
-local PS = Instance.new("UIStroke"); PS.Color = Color3.fromRGB(230, 40, 40); PS.Thickness = 2; PS.Parent = Panel
+-- Main
+local M=Instance.new("Frame")M.Size=UDim2.new(0,400,0,300)
+M.Position=UDim2.new(.5,-200,.5,-150)
+M.BackgroundColor3=Color3.fromRGB(15,15,20)M.BorderSizePixel=0
+M.Visible=false M.Active=true M.Parent=S
+Instance.new("UICorner",M).CornerRadius=UDim.new(0,14)
+local ms=Instance.new("UIStroke",M)ms.Color=Color3.fromRGB(0,255,170)
+ms.Thickness=1.5 ms.Transparency=.3
 
-local Title = Instance.new("TextLabel")
-Title.Size = UDim2.new(1, 0, 0, 34)
-Title.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-Title.Text = "NhazX | Auto High Value"
-Title.TextColor3 = Color3.fromRGB(255, 255, 255)
-Title.Font = Enum.Font.GothamBold
-Title.TextSize = 15
-Title.Active = true
-Title.Parent = Panel
-local TC = Instance.new("UICorner"); TC.CornerRadius = UDim.new(0, 10); TC.Parent = Title
+-- TopBar
+local TB=Instance.new("Frame")TB.Size=UDim2.new(1,0,0,40)
+TB.BackgroundColor3=Color3.fromRGB(20,20,28)TB.BorderSizePixel=0 TB.Parent=M
+Instance.new("UICorner",TB).CornerRadius=UDim.new(0,14)
+local tf=Instance.new("Frame")tf.Size=UDim2.new(1,0,0,14)
+tf.Position=UDim2.new(0,0,1,-14)tf.BackgroundColor3=Color3.fromRGB(20,20,28)
+tf.BorderSizePixel=0 tf.Parent=TB
 
-local Credit = Instance.new("TextLabel")
-Credit.Size = UDim2.new(1, 0, 0, 16)
-Credit.Position = UDim2.new(0, 0, 0, 34)
-Credit.BackgroundTransparency = 1
-Credit.Text = "script by @nhaz_samurai"
-Credit.TextColor3 = Color3.fromRGB(180, 180, 180)
-Credit.Font = Enum.Font.Gotham
-Credit.TextSize = 10
-Credit.Parent = Panel
+local Tt=Instance.new("TextLabel")Tt.Size=UDim2.new(1,-100,1,0)
+Tt.Position=UDim2.new(0,15,0,0)Tt.BackgroundTransparency=1
+Tt.Text="NhazX  |  Egg Steal"Tt.TextColor3=Color3.fromRGB(0,255,170)
+Tt.Font=Enum.Font.GothamBold Tt.TextSize=16
+Tt.TextXAlignment=Enum.TextXAlignment.Left Tt.Parent=TB
 
-local function mkBtn(text, y, cb)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, -20, 0, 32)
-    b.Position = UDim2.new(0, 10, 0, y)
-    b.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
-    b.BorderSizePixel = 0
-    b.Text = text
-    b.TextColor3 = Color3.fromRGB(255, 255, 255)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
-    b.Parent = Panel
-    local c = Instance.new("UICorner"); c.CornerRadius = UDim.new(0, 6); c.Parent = b
-    b.MouseButton1Click:Connect(cb)
-    return b
+local Cr=Instance.new("TextLabel")Cr.Size=UDim2.new(0,90,1,0)
+Cr.Position=UDim2.new(1,-95,0,0)Cr.BackgroundTransparency=1
+Cr.Text="@nhaz_samurai"Cr.TextColor3=Color3.fromRGB(255,255,255)
+Cr.Font=Enum.Font.Gotham Cr.TextSize=11
+Cr.TextXAlignment=Enum.TextXAlignment.Right Cr.Parent=TB
+
+local Cb=Instance.new("TextButton")Cb.Size=UDim2.new(0,26,0,26)
+Cb.Position=UDim2.new(1,-34,0,7)Cb.BackgroundColor3=Color3.fromRGB(255,60,60)
+Cb.Text="X"Cb.TextColor3=Color3.fromRGB(255,255,255)
+Cb.Font=Enum.Font.GothamBold Cb.TextSize=14 Cb.BorderSizePixel=0 Cb.Parent=TB
+Instance.new("UICorner",Cb).CornerRadius=UDim.new(0,8)
+
+-- Drag
+local dg,di,ds,sp
+TB.InputBegan:Connect(function(i)
+ if i.UserInputType==Enum.UserInputType.MouseButton1 or i.UserInputType==Enum.UserInputType.Touch then
+  dg=true ds=i.Position sp=M.Position
+  i.Changed:Connect(function()if i.UserInputState==Enum.UserInputState.End then dg=false end end)
+ end
+end)
+TB.InputChanged:Connect(function(i)
+ if i.UserInputType==Enum.UserInputType.MouseMovement or i.UserInputType==Enum.UserInputType.Touch then di=i end
+end)
+U.InputChanged:Connect(function(i)
+ if i==di and dg then
+  local d=i.Position-ds
+  M.Position=UDim2.new(sp.X.Scale,sp.X.Offset+d.X,sp.Y.Scale,sp.Y.Offset+d.Y)
+ end
+end)
+
+-- Toggle GUI
+I.MouseButton1Click:Connect(function()
+ M.Visible=not M.Visible
+ T:Create(I,TweenInfo.new(.15),{
+  BackgroundColor3=M.Visible and Color3.fromRGB(0,255,170) or Color3.fromRGB(18,18,22),
+  TextColor3=M.Visible and Color3.fromRGB(18,18,22) or Color3.fromRGB(0,255,170)
+ }):Play()
+end)
+Cb.MouseButton1Click:Connect(function()M.Visible=false end)
+
+-- Toggle factory
+local function mTog(n,y,cb)
+ local h=Instance.new("Frame")h.Size=UDim2.new(1,-30,0,40)
+ h.Position=UDim2.new(0,15,0,y)h.BackgroundColor3=Color3.fromRGB(22,22,30)
+ h.BorderSizePixel=0 h.Parent=M
+ Instance.new("UICorner",h).CornerRadius=UDim.new(0,10)
+ local l=Instance.new("TextLabel")l.Size=UDim2.new(1,-80,1,0)
+ l.Position=UDim2.new(0,15,0,0)l.BackgroundTransparency=1
+ l.Text=n l.TextColor3=Color3.fromRGB(240,240,240)
+ l.Font=Enum.Font.GothamMedium l.TextSize=14
+ l.TextXAlignment=Enum.TextXAlignment.Left l.Parent=h
+ local sw=Instance.new("TextButton")sw.Size=UDim2.new(0,50,0,26)
+ sw.Position=UDim2.new(1,-62,.5,-13)
+ sw.BackgroundColor3=Color3.fromRGB(60,60,70)sw.Text=""
+ sw.BorderSizePixel=0 sw.AutoButtonColor=false sw.Parent=h
+ Instance.new("UICorner",sw).CornerRadius=UDim.new(1,0)
+ local k=Instance.new("Frame")k.Size=UDim2.new(0,20,0,20)
+ k.Position=UDim2.new(0,3,.5,-10)k.BackgroundColor3=Color3.fromRGB(255,255,255)
+ k.BorderSizePixel=0 k.Parent=sw
+ Instance.new("UICorner",k).CornerRadius=UDim.new(1,0)
+ local s=false
+ sw.MouseButton1Click:Connect(function()
+  s=not s
+  T:Create(sw,TweenInfo.new(.15),{BackgroundColor3=s and Color3.fromRGB(0,255,170) or Color3.fromRGB(60,60,70)}):Play()
+  T:Create(k,TweenInfo.new(.15),{Position=s and UDim2.new(1,-23,.5,-10) or UDim2.new(0,3,.5,-10)}):Play()
+  if cb then cb(s)end
+ end)
 end
 
-local stealBtn
-stealBtn = mkBtn("AUTO HIGH VALUE: OFF", 58, function()
-    CONFIG.AutoSteal = not CONFIG.AutoSteal
-    stealBtn.Text = "AUTO HIGH VALUE: " .. (CONFIG.AutoSteal and "ON" or "OFF")
-    stealBtn.BackgroundColor3 = CONFIG.AutoSteal and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
+-- Steal Button
+local SB=Instance.new("TextButton")SB.Size=UDim2.new(1,-30,0,44)
+SB.Position=UDim2.new(0,15,0,14)SB.BackgroundColor3=Color3.fromRGB(0,255,170)
+SB.Text="⚡ STEAL EGG"SB.TextColor3=Color3.fromRGB(15,15,20)
+SB.Font=Enum.Font.GothamBold SB.TextSize=17 SB.BorderSizePixel=0 SB.Parent=M
+Instance.new("UICorner",SB).CornerRadius=UDim.new(0,10)
+
+-- Fly
+local fy=false local fv,fg,fc
+local function SF()
+ if fy then return end fy=true
+ local c=LP.Character if not c then return end
+ local r=c:FindFirstChild("HumanoidRootPart") if not r then return end
+ fv=Instance.new("BodyVelocity",r)fv.MaxForce=Vector3.new(9e9,9e9,9e9)fv.Velocity=Vector3.new()
+ fg=Instance.new("BodyGyro",r)fg.MaxTorque=Vector3.new(9e9,9e9,9e9)
+ fg.P=1000 fg.D=50 fg.CFrame=r.CFrame
+ fc=R.RenderStepped:Connect(function()
+  if not fy then return end
+  local ch=LP.Character if not ch then return end
+  local rt=ch:FindFirstChild("HumanoidRootPart") if not rt or not fv then return end
+  local cm=workspace.CurrentCamera local mv=Vector3.new()
+  if U:IsKeyDown(Enum.KeyCode.W)then mv=mv+cm.CFrame.LookVector end
+  if U:IsKeyDown(Enum.KeyCode.S)then mv=mv-cm.CFrame.LookVector end
+  if U:IsKeyDown(Enum.KeyCode.A)then mv=mv-cm.CFrame.RightVector end
+  if U:IsKeyDown(Enum.KeyCode.D)then mv=mv+cm.CFrame.RightVector end
+  if U:IsKeyDown(Enum.KeyCode.Space)then mv=mv+Vector3.new(0,1,0)end
+  if U:IsKeyDown(Enum.KeyCode.LeftShift)then mv=mv-Vector3.new(0,1,0)end
+  if mv.Magnitude>0 then mv=mv.Unit*80 end
+  fv.Velocity=mv fg.CFrame=cm.CFrame
+ end)
+end
+local function XF()
+ fy=false
+ if fc then fc:Disconnect()fc=nil end
+ if fv then fv:Destroy()fv=nil end
+ if fg then fg:Destroy()fg=nil end
+end
+
+-- Speed
+local spd=false local sc
+local function SS()
+ spd=true
+ local ch=LP.Character local hm=ch and ch:FindFirstChildOfClass("Humanoid")
+ if hm then hm.WalkSpeed=120 end
+ sc=R.Heartbeat:Connect(function()
+  if not spd then return end
+  local c=LP.Character local h=c and c:FindFirstChildOfClass("Humanoid")
+  if h then h.WalkSpeed=120 end
+ end)
+end
+local function XS()
+ spd=false
+ if sc then sc:Disconnect()sc=nil end
+ local c=LP.Character local h=c and c:FindFirstChildOfClass("Humanoid")
+ if h then h.WalkSpeed=16 end
+end
+
+-- Find + TP egg
+local function FindE()
+ for _,o in ipairs(workspace:GetDescendants())do
+  if o:IsA("BasePart")and o.Name:lower():find("egg")then return o end
+ end
+end
+local function TPE(e)
+ local c=LP.Character if not c then return end
+ local r=c:FindFirstChild("HumanoidRootPart") if not r or not e then return end
+ r.CFrame=CFrame.new(e.Position+Vector3.new(0,3,0))
+ task.wait(.05)
+ pcall(function()
+  if firetouchinterest then firetouchinterest(r,e,0)task.wait(.02)firetouchinterest(r,e,1)
+  elseif fireproximityprompt then
+   local p=e:FindFirstChildOfClass("ProximityPrompt")if p then fireproximityprompt(p)end
+  end
+ end)
+end
+local function Back()
+ local c=LP.Character if not c then return end
+ local r=c:FindFirstChild("HumanoidRootPart") if not r then return end
+ local s=workspace:FindFirstChildOfClass("SpawnLocation")
+ if s then r.CFrame=s.CFrame+Vector3.new(0,5,0)end
+end
+
+-- Steal click
+local cnt=0
+SB.MouseButton1Click:Connect(function()
+ SB.Text="⏳ STEALING..."SB.BackgroundColor3=Color3.fromRGB(255,200,0)
+ task.spawn(function()
+  local e=FindE()
+  if e then TPE(e)cnt=cnt+1 task.wait(.1)Back()
+   SB.Text="✅ STOLEN ("..cnt..")"
+  else SB.Text="❌ NO EGG"end
+  task.wait(1.2)SB.Text="⚡ STEAL EGG"SB.BackgroundColor3=Color3.fromRGB(0,255,170)
+ end)
 end)
 
-local priorityBtn
-priorityBtn = mkBtn("PRIORITY: ON", 100, function()
-    CONFIG.PriorityList = not CONFIG.PriorityList
-    priorityBtn.Text = "PRIORITY: " .. (CONFIG.PriorityList and "ON" or "OFF")
-    priorityBtn.BackgroundColor3 = CONFIG.PriorityList and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
+-- Toggles
+mTog("Speed Boost",68,function(v)if v then SS()else XS()end end)
+mTog("Fly",118,function(v)if v then SF()else XF()end end)
+local auto=false local ac
+mTog("Auto Steal",168,function(v)
+ auto=v
+ if v then
+  ac=task.spawn(function()
+   while auto do
+    local e=FindE()
+    if e then TPE(e)cnt=cnt+1 task.wait(.1)Back()end
+    task.wait(.3)
+   end
+  end)
+ else
+  if ac then pcall(function()task.cancel(ac)end)ac=nil end
+ end
 end)
 
-mkBtn("STEAL HIGHEST NOW", 142, function()
-    local list = getAllEggsSorted()
-    if list[1] then
-        stealAndReturn(list[1])
-    end
+-- Respawn
+LP.CharacterAdded:Connect(function()
+ task.wait(1)
+ if spd then XS()SS()end
+ if fy then XF()SF()end
 end)
 
-mkBtn("REFRESH REMOTES", 184, function()
-    cacheRemotes()
-end)
-
-mkBtn("CLOSE", 226, function()
-    Panel.Visible = false
-end)
-
-MiniBtn.MouseButton1Click:Connect(function()
-    Panel.Visible = not Panel.Visible
-    MiniBtn.BackgroundColor3 = Panel.Visible and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(230, 40, 40)
-end)
-
-makeDraggable(MiniBtn)
-makeDraggable(Panel, Title)
-
--- =========================================================
--- INIT / ចាប់ផ្តើម
--- =========================================================
-cacheRemotes()
-
-task.spawn(function() while task.wait(5) do cacheRemotes() end end)
-
--- Auto steal loop
+-- Notify
+local N=Instance.new("TextLabel")N.Size=UDim2.new(0,290,0,38)
+N.Position=UDim2.new(.5,-145,0,30)
+N.BackgroundColor3=Color3.fromRGB(0,255,170)N.BackgroundTransparency=.1
+N.Text="NhazX Loaded | @nhaz_samurai"N.TextColor3=Color3.fromRGB(15,15,20)
+N.Font=Enum.Font.GothamBold N.TextSize=13 N.Parent=S
+Instance.new("UICorner",N).CornerRadius=UDim.new(0,10)
 task.spawn(function()
-    while task.wait(CONFIG.LoopDelay) do
-        if CONFIG.AutoSteal then
-            local list = getAllEggsSorted()
-            if list[1] then
-                stealAndReturn(list[1])
-            end
-        end
-    end
-end)
-
-pcall(function()
-    game:GetService("StarterGui"):SetCore("SendNotification", {
-        Title = "NhazX",
-        Text = "Auto High Value loaded | @nhaz_samurai",
-        Duration = 5
-    })
+ task.wait(3)
+ T:Create(N,TweenInfo.new(.5),{BackgroundTransparency=1,TextTransparency=1}):Play()
+ task.wait(.5)N:Destroy()
 end)
