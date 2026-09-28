@@ -1,31 +1,72 @@
 -- Roblox: Steal an Egg / Steal a Brainrot
--- Credit: script by @nhaz_samurai
--- Steal without chasing (instant) + Aimbot for far steal
--- Paste into executor (Delta, Fluxus, Solara)
+-- GUI: NhazX | Credit: script by @nhaz_samurai
+-- Auto-target high value pets + Instant claim + Fast fly back
+-- Paste into executor (Delta, Fluxus, Solara, Synapse)
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local LocalPlayer = Players.LocalPlayer
 local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
 local Camera = workspace.CurrentCamera
 
 -- =========================================================
--- CONFIG
+-- CONFIG / ការកំណត់
 -- =========================================================
 local CONFIG = {
-    AutoSteal     = false,   -- លួចស្វ័យប្រវត្តិ
-    InstantClaim  = true,    -- លួចភ្លាម មិនបាច់មេដេញ
-    Aimbot        = false,   -- វៃគេឆ្ងាយ
-    StealRange    = 9999,    -- ចម្ងាយគ្មានកំណត់
-    AimbotRange   = 5000,
+    AutoSteal     = false,
+    InstantClaim  = true,
+    FlySpeed      = 250,      -- ល្បឿនហោះទៅរក egg
+    ReturnSpeed   = 350,      -- ល្បឿនត្រឡប់មកវិញ
+    StealRange    = 9999,
+    PriorityList  = true,     -- យកតែ egg តម្លៃថ្លៃមុន
     AntiKick      = true,
-    LoopDelay     = 0.05,
+    LoopDelay     = 0.1,
 }
 
 -- =========================================================
--- ANTI-KICK
+-- PRIORITY PETS / របស់តម្លៃថ្លៃ (តាមរូបភាព)
+-- =========================================================
+local PRIORITY_PETS = {
+    -- Divine (ខ្ពស់បំផុត)
+    ["Aetheron"]     = 100,
+    ["World Burner"] = 99,
+    ["ArchAngel"]    = 98,
+    ["Kitsune"]      = 97,
+    ["Unicorn"]      = 96,
+    ["Nightflame"]   = 95,
+
+    -- Eternal
+    ["Gorilla King"] = 90,
+
+    -- Cosmic
+    ["Triceratops"]  = 85,
+
+    -- Mythic
+    ["Ankylosaurus"] = 80,
+
+    -- Legendary
+    ["Pterodactyl"]  = 75,
+
+    -- Royal
+    ["Orca"]         = 70,
+    ["Scorpion"]     = 69,
+    ["Royal Sphinx"] = 68,
+
+    -- Rare
+    ["Sand Spider"]  = 60,
+    ["Owl"]          = 59,
+
+    -- Common
+    ["Turtle"]       = 50,
+    ["Duckling"]     = 49,
+    ["Chicken"]      = 48,
+}
+
+-- =========================================================
+-- ANTI-KICK / ការពារការបណ្តេញ
 -- =========================================================
 if CONFIG.AntiKick then
     pcall(function()
@@ -45,7 +86,7 @@ if CONFIG.AntiKick then
 end
 
 -- =========================================================
--- REMOTE CACHE (steal/claim/take/grab/pickup)
+-- REMOTE CACHE / ចាប់ remote លួច
 -- =========================================================
 local StealRemotes = {}
 local function cacheRemotes()
@@ -68,31 +109,87 @@ local function cacheRemotes()
 end
 
 -- =========================================================
--- GET ALL EGGS (រករបស់ទាំងអស់)
+-- GET PET VALUE / រកតម្លៃរបស់
 -- =========================================================
-local function getAllEggs()
+local function getPetValue(obj)
+    if not obj then return 0 end
+    local name = obj.Name
+
+    -- ពិនិត្យឈ្មោះផ្ទាល់
+    for petName, value in pairs(PRIORITY_PETS) do
+        if name:lower():find(petName:lower()) then
+            return value
+        end
+    end
+
+    -- ពិនិត្យ attribute
+    local attr = obj:GetAttribute("PetName") or obj:GetAttribute("Name")
+    if attr then
+        for petName, value in pairs(PRIORITY_PETS) do
+            if tostring(attr):lower():find(petName:lower()) then
+                return value
+            end
+        end
+    end
+
+    return 0
+end
+
+-- =========================================================
+-- GET ALL EGGS with VALUE / រក egg ទាំងអស់តាមតម្លៃ
+-- =========================================================
+local function getAllEggsSorted()
     local list = {}
     for _, obj in pairs(workspace:GetDescendants()) do
         if obj:IsA("BasePart") or obj:IsA("Model") then
             local n = obj.Name:lower()
-            if n:find("egg") or n:find("brainrot") or n:find("pet") then
-                table.insert(list, obj)
+            if n:find("egg") or n:find("brainrot") or n:find("pet")
+            or n:find("chicken") or n:find("duck") or n:find("turtle")
+            or n:find("owl") or n:find("spider") or n:find("sphinx")
+            or n:find("scorpion") or n:find("orca") or n:find("ptero")
+            or n:find("ankylo") or n:find("trice") or n:find("gorilla")
+            or n:find("nightflame") or n:find("unicorn") or n:find("kitsune")
+            or n:find("archangel") or n:find("burner") or n:find("aetheron") then
+                local value = getPetValue(obj)
+                table.insert(list, {obj = obj, value = value})
             end
         end
+    end
+    -- តម្រៀបតាមតម្លៃខ្ពស់មុន
+    if CONFIG.PriorityList then
+        table.sort(list, function(a, b) return a.value > b.value end)
     end
     return list
 end
 
 -- =========================================================
--- INSTANT CLAIM (លួចភ្លាម មិនបាច់មេដេញ)
+-- FLY TO TARGET / ហោះទៅរករបស់
+-- =========================================================
+local function flyTo(targetPart, speed)
+    local char = LocalPlayer.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    if not targetPart then return end
+
+    local hrp = char.HumanoidRootPart
+    local startPos = hrp.Position
+    local endPos = targetPart.Position + Vector3.new(0, 3, 0)
+    local distance = (endPos - startPos).Magnitude
+    local duration = distance / speed
+
+    local tween = TweenService:Create(hrp, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+        CFrame = CFrame.new(endPos, endPos + targetPart.CFrame.LookVector)
+    })
+    tween:Play()
+    tween.Completed:Wait()
+end
+
+-- =========================================================
+-- INSTANT CLAIM / លួចភ្លាម
 -- =========================================================
 local function instantClaim(obj)
     if not obj then return end
     local target = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
     if not target then return end
-
-    local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
     -- Fire remotes ទាំងអស់
     for _, r in pairs(StealRemotes) do
@@ -132,7 +229,7 @@ local function instantClaim(obj)
         end
     end)
 
-    -- បញ្ចូល ProximityPrompt
+    -- ProximityPrompt
     pcall(function()
         for _, p in pairs(obj:GetDescendants()) do
             if p:IsA("ProximityPrompt") then
@@ -142,69 +239,35 @@ local function instantClaim(obj)
             end
         end
     end)
-
-    -- ទូរទៅរករបស់ (បើ instant មិនកើត)
-    if CONFIG.InstantClaim then
-        pcall(function()
-            char.HumanoidRootPart.CFrame = target.CFrame + Vector3.new(0, 2, 0)
-        end)
-    end
 end
 
 -- =========================================================
--- AIMBOT (វៃគេឆ្ងាយ - Teleport + Steal)
+-- STEAL + FLY BACK / លួច + ហោះត្រឡប់
 -- =========================================================
-local function aimbotSteal(targetPlayer)
-    if not targetPlayer or targetPlayer == LocalPlayer then return end
-    local char = targetPlayer.Character
-    if not char then return end
+local function stealAndReturn(eggData)
+    if not eggData or not eggData.obj then return end
 
-    local targetPart = nil
-    for _, obj in pairs(char:GetDescendants()) do
-        if obj:IsA("BasePart") and (obj.Name:lower():find("egg") or obj.Name:lower():find("brainrot")) then
-            targetPart = obj
-            break
-        end
-    end
-    if not targetPart then
-        for _, obj in pairs(workspace:GetDescendants()) do
-            if obj:IsA("Model") or obj:IsA("BasePart") then
-                local owner = obj:FindFirstChild("Owner") or obj:FindFirstChild("OwnerId")
-                if owner and ((owner:IsA("ObjectValue") and owner.Value == targetPlayer)
-                or (owner:IsA("IntValue") and owner.Value == targetPlayer.UserId)) then
-                    targetPart = obj:IsA("Model") and (obj.PrimaryPart or obj:FindFirstChildWhichIsA("BasePart")) or obj
-                    break
-                end
-            end
-        end
-    end
-
-    if targetPart then
-        instantClaim(targetPart)
-    else
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if hrp then
-            LocalPlayer.Character.HumanoidRootPart.CFrame = hrp.CFrame + Vector3.new(0, 2, 0)
-        end
-    end
-end
-
--- =========================================================
--- CLOSEST PLAYER AIMBOT
--- =========================================================
-local function getClosestPlayer()
-    local closest, dist = nil, CONFIG.AimbotRange
     local char = LocalPlayer.Character
-    if not char or not char:FindFirstChild("HumanoidRootPart") then return nil end
-    local myPos = char.HumanoidRootPart.Position
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
-    for _, p in pairs(Players:GetPlayers()) do
-        if p ~= LocalPlayer and p.Character and p.Character:FindFirstChild("HumanoidRootPart") then
-            local d = (p.Character.HumanoidRootPart.Position - myPos).Magnitude
-            if d < dist then closest, dist = p, d end
-        end
-    end
-    return closest
+    local hrp = char.HumanoidRootPart
+    local originalPos = hrp.CFrame
+
+    local target = eggData.obj:IsA("Model") and (eggData.obj.PrimaryPart or eggData.obj:FindFirstChildWhichIsA("BasePart")) or eggData.obj
+    if not target then return end
+
+    -- 1. ហោះទៅរក egg លឿន
+    flyTo(target, CONFIG.FlySpeed)
+
+    -- 2. លួច
+    instantClaim(eggData.obj)
+
+    -- 3. ហោះត្រឡប់មកវិញលឿន
+    local returnTween = TweenService:Create(hrp, TweenInfo.new(0.3, Enum.EasingStyle.Linear), {
+        CFrame = originalPos
+    })
+    returnTween:Play()
+    returnTween.Completed:Wait()
 end
 
 -- =========================================================
@@ -261,7 +324,7 @@ local MC = Instance.new("UICorner"); MC.CornerRadius = UDim.new(1, 0); MC.Parent
 local MS = Instance.new("UIStroke"); MS.Color = Color3.fromRGB(255, 255, 255); MS.Thickness = 2; MS.Parent = MiniBtn
 
 local Panel = Instance.new("Frame")
-Panel.Size = UDim2.new(0, 240, 0, 360)
+Panel.Size = UDim2.new(0, 250, 0, 320)
 Panel.Position = UDim2.new(0, 30, 0, 220)
 Panel.BackgroundColor3 = Color3.fromRGB(20, 20, 25)
 Panel.BorderSizePixel = 0
@@ -274,7 +337,7 @@ local PS = Instance.new("UIStroke"); PS.Color = Color3.fromRGB(230, 40, 40); PS.
 local Title = Instance.new("TextLabel")
 Title.Size = UDim2.new(1, 0, 0, 34)
 Title.BackgroundColor3 = Color3.fromRGB(230, 40, 40)
-Title.Text = "NhazX Steal+Aimbot"
+Title.Text = "NhazX | Auto High Value"
 Title.TextColor3 = Color3.fromRGB(255, 255, 255)
 Title.Font = Enum.Font.GothamBold
 Title.TextSize = 15
@@ -294,7 +357,7 @@ Credit.Parent = Panel
 
 local function mkBtn(text, y, cb)
     local b = Instance.new("TextButton")
-    b.Size = UDim2.new(1, -20, 0, 34)
+    b.Size = UDim2.new(1, -20, 0, 32)
     b.Position = UDim2.new(0, 10, 0, y)
     b.BackgroundColor3 = Color3.fromRGB(50, 50, 60)
     b.BorderSizePixel = 0
@@ -309,33 +372,31 @@ local function mkBtn(text, y, cb)
 end
 
 local stealBtn
-stealBtn = mkBtn("AUTO STEAL: OFF", 58, function()
+stealBtn = mkBtn("AUTO HIGH VALUE: OFF", 58, function()
     CONFIG.AutoSteal = not CONFIG.AutoSteal
-    stealBtn.Text = "AUTO STEAL: " .. (CONFIG.AutoSteal and "ON" or "OFF")
+    stealBtn.Text = "AUTO HIGH VALUE: " .. (CONFIG.AutoSteal and "ON" or "OFF")
     stealBtn.BackgroundColor3 = CONFIG.AutoSteal and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
 end)
 
-local aimBtn
-aimBtn = mkBtn("AIMBOT: OFF", 100, function()
-    CONFIG.Aimbot = not CONFIG.Aimbot
-    aimBtn.Text = "AIMBOT: " .. (CONFIG.Aimbot and "ON" or "OFF")
-    aimBtn.BackgroundColor3 = CONFIG.Aimbot and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
+local priorityBtn
+priorityBtn = mkBtn("PRIORITY: ON", 100, function()
+    CONFIG.PriorityList = not CONFIG.PriorityList
+    priorityBtn.Text = "PRIORITY: " .. (CONFIG.PriorityList and "ON" or "OFF")
+    priorityBtn.BackgroundColor3 = CONFIG.PriorityList and Color3.fromRGB(40, 160, 60) or Color3.fromRGB(50, 50, 60)
 end)
 
-mkBtn("STEAL ALL NOW", 142, function()
-    for _, e in ipairs(getAllEggs()) do instantClaim(e) end
+mkBtn("STEAL HIGHEST NOW", 142, function()
+    local list = getAllEggsSorted()
+    if list[1] then
+        stealAndReturn(list[1])
+    end
 end)
 
-mkBtn("AIMBOT NEAREST PLAYER", 184, function()
-    local p = getClosestPlayer()
-    if p then aimbotSteal(p) end
-end)
-
-mkBtn("REFRESH REMOTES", 226, function()
+mkBtn("REFRESH REMOTES", 184, function()
     cacheRemotes()
 end)
 
-mkBtn("CLOSE", 268, function()
+mkBtn("CLOSE", 226, function()
     Panel.Visible = false
 end)
 
@@ -348,27 +409,20 @@ makeDraggable(MiniBtn)
 makeDraggable(Panel, Title)
 
 -- =========================================================
--- LOOPS
+-- INIT / ចាប់ផ្តើម
 -- =========================================================
 cacheRemotes()
 
 task.spawn(function() while task.wait(5) do cacheRemotes() end end)
 
--- Auto Steal
+-- Auto steal loop
 task.spawn(function()
     while task.wait(CONFIG.LoopDelay) do
         if CONFIG.AutoSteal then
-            for _, e in ipairs(getAllEggs()) do instantClaim(e) end
-        end
-    end
-end)
-
--- Aimbot loop
-task.spawn(function()
-    while task.wait(0.2) do
-        if CONFIG.Aimbot then
-            local p = getClosestPlayer()
-            if p then aimbotSteal(p) end
+            local list = getAllEggsSorted()
+            if list[1] then
+                stealAndReturn(list[1])
+            end
         end
     end
 end)
@@ -376,7 +430,7 @@ end)
 pcall(function()
     game:GetService("StarterGui"):SetCore("SendNotification", {
         Title = "NhazX",
-        Text = "Steal + Aimbot loaded | @nhaz_samurai",
+        Text = "Auto High Value loaded | @nhaz_samurai",
         Duration = 5
     })
 end)
